@@ -148,3 +148,14 @@ test('etiketter med ord knyttes til riktig mål', () => {
   const a3 = checkAnswers(c3, [{ symbol: 'P', label: 'Pris', value: '20' }], eqCtx);
   assert.equal(a3[0].verdict, 'riktig');
 });
+
+test('kostnad: F og c godtas som navn på FC og v, og gale tall blir «feil», ikke «mangler»', () => {
+  const cc = compileContext({ symbols: ['TC', 'AC', 'MC', 'FC', 'VC', 'TR'], defs: { TC: '1400 + 57*Q' }, param: 'Q', unknown: 'Q', solution: { Q: '100', FC: '1400', MC: '57' }, answerSymbols: ['v'] });
+  const targets = [
+    { symbol: 'FC', label: 'Faste kostnader', value: '1400', aliases: ['faste'], symbolAliases: ['F', 'FK'] },
+    { symbol: 'v', label: 'Variabel kostnad per enhet', value: '57', aliases: ['variabel'], symbolAliases: ['c'] },
+  ];
+  assert.deepEqual(checkAnswers(checkWork(['F = 1400', 'c = 57'], cc), targets, cc).map((a) => a.verdict), ['riktig', 'riktig']);
+  assert.deepEqual(checkAnswers(checkWork(['F = 1500, c = 57'], cc), targets, cc).map((a) => a.verdict), ['feil', 'riktig']);
+  assert.deepEqual(checkAnswers(checkWork(['FC = 1400', 'v = 57'], cc), targets, cc).map((a) => a.verdict), ['riktig', 'riktig']);
+});

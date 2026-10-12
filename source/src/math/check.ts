@@ -409,6 +409,8 @@ export interface AnswerTarget {
   aliases?: string[];
   /** Absolutt toleranse, f.eks. ved avlesning fra figur. */
   tolerance?: string;
+  /** Andre bokstaver for samme størrelse («F» for FC, «c» for variabel kostnad per enhet). */
+  symbolAliases?: string[];
 }
 
 export type AnswerVerdict = 'riktig' | 'riktig-avrundet' | 'feil' | 'mangler' | 'uavklart';
@@ -477,6 +479,14 @@ export function extractValues(checks: LineCheck[], cc: CompiledContext): Map<str
 
 export function checkAnswers(checks: LineCheck[], targets: AnswerTarget[], cc: CompiledContext): AnswerCheck[] {
   const vals = extractValues(checks, cc);
+  // Samme størrelse skrevet med en annen bokstav (leksjonen bruker F og c, oppgaven FC og v).
+  for (const t of targets)
+    if (!vals.has(t.symbol))
+      for (const a of t.symbolAliases ?? [])
+        if (vals.has(a) && !targets.some((o) => o.symbol === a)) {
+          vals.set(t.symbol, vals.get(a)!);
+          break;
+        }
   // Navngitte størrelser skrevet med ord («endring = 15 %»). Hver etikett knyttes til målet den ligner mest.
   const stem = (w: string) => w.toLowerCase().slice(0, 6);
   const labelKeys = [...vals.keys()].filter((k) => k.startsWith('label:'));
