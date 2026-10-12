@@ -597,7 +597,7 @@ export type LessonCard =
   | { type: 'patterns'; title: string; items: { looksLike: string; means: string }[]; mascot?: string }
   | { type: 'mnemonic'; title: string; body: string; mascot?: string }
   | { type: 'trap'; title: string; body: string; mascot?: string }
-  | { type: 'check'; question: string; options: string[]; correct: number; why: string; mascot?: string; figure?: { docId: string; page: number; box: [number, number, number, number] } };
+  | { type: 'check'; question: string; options: string[]; correct: number; why: string; mascot?: string; figure?: { docId: string; page: number; box: [number, number, number, number] }; numeric?: { value: number; unit?: string; tol: number } };
 
 export interface QuizItem {
   question: string;

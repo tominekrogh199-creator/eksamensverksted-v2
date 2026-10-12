@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LessonCard, LessonRec, QuizItem, LearnerProfile } from '../../domain/types';
 import { store, useStore } from '../../state/store';
 import { getFamily } from '../../families';
-import { getLesson, kbLesson, prefetchLesson } from '../../learning/lesson';
+import { getLesson, kbLesson, prefetchLesson, parseNumericAnswer, formatAnswer } from '../../learning/lesson';
 import { awardXp, calculatorFor, patchTopic, playSound, profile, saveProfile, topicState } from '../../learning/game';
 import { chapters, topicStats, relevanceText, formatText } from '../../learning/path';
 import { aiAvailable } from '../../ai/client';
@@ -165,7 +165,8 @@ export function Lesson() {
 
   const answerCheck = (i: number) => {
     if (card.type !== 'check' || st.picked !== undefined) return;
-    const ok = i === card.correct;
+    // Tallsvar: i = 1 betyr riktig, 0 feil.
+    const ok = card.numeric ? i === 1 : i === card.correct;
     patch(idx, { picked: i });
     setMood(ok ? 'jubler' : 'oi');
     setSay(ok ? pick(OK_LINES) : pick(OOPS_LINES));
@@ -309,7 +310,7 @@ function hintFor(card: LessonCard, st: CardState, calculator: LearnerProfile['ca
     case 'mnemonic':
       return 'Si den høyt én gang, så sitter den bedre.';
     case 'check':
-      return st.picked === undefined ? 'Velg det du tror er riktig. Første forsøk gir poeng.' : '';
+      return st.picked !== undefined ? '' : card.numeric ? 'Regn selv før du ser fasiten. Første forsøk gir poeng.' : 'Velg det du tror er riktig. Første forsøk gir poeng.';
     default:
       return '';
   }
@@ -393,7 +394,8 @@ function CardView({ card, lesson, kbId, st, visual, calculator, onPick, onPatch,
             </div>
           ) : null}
           {f && (f.calc || f.figure) ? (
-            <details className="disclosure play-box" open={visual}>
+            // Samme figur går igjen på flere formelkort; den er åpen bare første gang, så kortene ikke blir lange.
+            <details className="disclosure play-box" open={visual && lesson.cards.find((c) => c.type === 'formula' && fam.formulas.find((x) => x.id === c.formulaId)?.figure === f.figure) === card}>
               <summary>
                 <Icon name="hand" size={16} /> Lek med formelen
               </summary>
@@ -498,8 +500,8 @@ function CardView({ card, lesson, kbId, st, visual, calculator, onPick, onPatch,
     case 'check':
       return (
         <div className="stack">
-          <span className="eyebrow">Sjekk deg selv</span>
-          <McQuestion q={card} picked={st.picked ?? null} onPick={onPick} />
+          <span className="eyebrow">{card.numeric ? 'Prøv selv' : 'Sjekk deg selv'}</span>
+          {card.numeric ? <NumericQuestion q={{ ...card, numeric: card.numeric }} picked={st.picked ?? null} typed={st.calcTry ?? ''} onType={(v) => onPatch({ calcTry: v })} onAnswer={onPick} /> : <McQuestion q={card} picked={st.picked ?? null} onPick={onPick} />}
         </div>
       );
   }
@@ -528,6 +530,47 @@ function McQuestion({ q, picked, onPick }: { q: { question: string; options: str
         <div className={`why-box${picked === q.correct ? ' ok' : ' bad'}`}>
           <strong>{picked === q.correct ? 'Riktig' : `Riktig svar er ${L[q.correct]}`}</strong>
           {q.why ? (
+            <p className="small">
+              <LessonText text={q.why} />
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Regnespørsmål med tallsvar. onAnswer(1) = riktig, onAnswer(0) = feil. Fasiten er regnet ut av appen. */
+function NumericQuestion({ q, picked, typed, onType, onAnswer }: { q: { question: string; why: string; numeric: { value: number; unit?: string; tol: number } }; picked: number | null; typed: string; onType: (v: string) => void; onAnswer: (ok: number) => void }) {
+  const n = parseNumericAnswer(typed, q.numeric.unit);
+  const [hint, setHint] = useState(false);
+  return (
+    <div className="stack">
+      <p className="lesson-q">
+        <LessonText text={q.question} />
+      </p>
+      <form
+        className="row calc-try"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (picked !== null) return;
+          if (n === null) return setHint(true);
+          onAnswer(Math.abs(n - q.numeric.value) <= q.numeric.tol ? 1 : 0);
+        }}
+      >
+        <label className="small" htmlFor="num-try">
+          Svaret ditt{q.numeric.unit ? ` (${q.numeric.unit})` : ''}
+        </label>
+        <input id="num-try" className="input" inputMode="decimal" autoComplete="off" value={typed} onChange={(e) => (onType(e.target.value), setHint(false))} placeholder="Skriv tallet" style={{ maxWidth: 180 }} disabled={picked !== null} />
+        <button className="btn small primary" type="submit" disabled={!typed.trim() || picked !== null}>
+          Sjekk
+        </button>
+      </form>
+      {hint && picked === null ? <p className="small" style={{ color: 'var(--amber)' }}>Skriv bare tallet, for eksempel 66,7.</p> : null}
+      {picked !== null ? (
+        <div className={`why-box${picked === 1 ? ' ok' : ' bad'}`}>
+          <strong>{picked === 1 ? 'Riktig' : `Riktig svar er ${formatAnswer(q.numeric.value, q.numeric.unit)}`}</strong>
+          {picked !== 1 && q.why ? (
             <p className="small">
               <LessonText text={q.why} />
             </p>
@@ -672,6 +715,7 @@ function Quiz({ items, kbId, onPoints, onDone }: { items: QuizItem[]; kbId: stri
   const [score, setScore] = useState(0);
   const [mood, setMood] = useState<Mood>('glad');
   const [say, setSay] = useState('Ta den tiden du trenger.');
+  const [typed, setTyped] = useState('');
   const q = items[i];
   if (!q) return null;
   const finish = (final: number) => {
@@ -694,6 +738,24 @@ function Quiz({ items, kbId, onPoints, onDone }: { items: QuizItem[]; kbId: stri
           </span>
           {q.source === 'eksamen' ? <Pill tone="teal">Fra eksamenene dine</Pill> : q.source === 'mal' ? <Pill tone="outline">Øvingsspørsmål</Pill> : null}
         </div>
+        {q.numeric ? (
+          <NumericQuestion
+            key={i}
+            q={{ ...q, numeric: q.numeric }}
+            picked={picked}
+            typed={typed}
+            onType={setTyped}
+            onAnswer={(j) => {
+              if (picked !== null) return;
+              setPicked(j);
+              const ok = j === 1;
+              if (ok) setScore((s) => s + 1);
+              setMood(ok ? 'jubler' : 'oi');
+              setSay(ok ? pick(OK_LINES) : pick(OOPS_LINES));
+              playSound(ok ? 'riktig' : 'feil');
+            }}
+          />
+        ) : (
         <McQuestion
           q={q}
           picked={picked}
@@ -707,6 +769,7 @@ function Quiz({ items, kbId, onPoints, onDone }: { items: QuizItem[]; kbId: stri
             playSound(ok ? 'riktig' : 'feil');
           }}
         />
+        )}
       </div>
       <div className="focus-bottom">
         <MascotSays kind={prof.mascot} name={prof.mascotName} mood={mood} text={say} size={56} speak={false} />
@@ -720,6 +783,7 @@ function Quiz({ items, kbId, onPoints, onDone }: { items: QuizItem[]; kbId: stri
               else {
                 setI(i + 1);
                 setPicked(null);
+                setTyped('');
                 setMood('glad');
                 setSay('Neste.');
               }

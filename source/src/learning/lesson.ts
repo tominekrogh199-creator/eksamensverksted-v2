@@ -192,7 +192,10 @@ export function templateNumeric(fam: FamilyKB, n: number): QuizItem[] {
       try {
         const t = generateOne(store.ui.activeCourseId ?? '', fam.id, tpl, Math.floor(Math.random() * 1e9));
         if (t.validation.status === 'forkastet') continue;
-        const p = t.parts.find((x) => x.kind === 'beregning' && x.targets?.length === 1);
+        // Bare deloppgaver som kan stå alene: den første, eller en senere som ikke bygger på en endring
+        // eller et svar fra før («Hvor mange prosent økte likevektsprisen?» gir ingen mening alene).
+        const standalone = (x: (typeof t.parts)[number], i: number) => i === 0 || (/\d/.test(x.prompt) && !/økt|økning|endr|\bny|\bnye|svaret|over|dette|fall|sank|steg/i.test(x.prompt));
+        const p = t.parts.find((x, i) => x.kind === 'beregning' && x.targets?.length === 1 && standalone(x, i));
         if (!p) continue;
         const target = p.targets![0];
         const value = evaluate(target.value);
@@ -201,7 +204,13 @@ export function templateNumeric(fam: FamilyKB, n: number): QuizItem[] {
         if (question.length > 420 || seen.has(question)) continue;
         seen.add(question);
         const tol = target.tolerance ? Math.abs(Number(target.tolerance)) || Math.abs(value) * 0.01 : Math.max(Math.abs(value) * 0.01, 0.005);
-        out.push({ question, options: [], correct: -1, why: `${target.label} = ${formatAnswer(value, target.unit)}.`, source: 'mal', numeric: { value, unit: target.unit, tol } });
+        // Forklaringen viser hele utregningen (fra den kontrollerte løsningen), ikke bare svaret.
+        const how = p.solution
+          .slice(0, 5)
+          .map((st) => [st.text, st.tex ? `$${st.tex}$` : ''].filter(Boolean).join(': '))
+          .filter(Boolean)
+          .join(' → ');
+        out.push({ question, options: [], correct: -1, why: `${how ? `${how}. ` : ''}${target.label} = ${formatAnswer(value, target.unit)}.`, source: 'mal', numeric: { value, unit: target.unit, tol } });
       } catch {
         /* hopp over */
       }
@@ -256,19 +265,62 @@ export function templateMc(fam: FamilyKB, n: number): QuizItem[] {
   return out;
 }
 
-/** Ordene et oppgavemønster kjenner igjen («inntektseffekt», «arbeidsfri inntekt» …), lesbart. */
-function signalWords(re: RegExp[]): string[] {
+/**
+ * Ordene et oppgavemønster kjenner igjen («inntektseffekt», «arbeidsfri inntekt» …), lesbart.
+ * Bare hele ord og uttrykk vises: alternativer med jokertegn, ordstammer («seriekob…») eller
+ * kombinasjoner («hvorfor.*likevekt») hoppes over, så kortet aldri viser regex-rester.
+ */
+// Mønstrene matcher ofte på ordstammer. Her vises hele ordet i stedet; noen deler av setninger droppes.
+const STEM_FIX: Record<string, string | null> = {
+  forskyv: 'forskyvning', unnaslunt: 'unnasluntring', kapitalism: 'kapitalisme', gjennomsnittsprodu: 'gjennomsnittsprodukt',
+  seriekob: 'seriekobling', parallellkob: 'parallellkobling', stjernekob: 'stjernekobling', spenningsdel: 'spenningsdeling',
+  strømdel: 'strømdeling', forenkl: 'forenkle', konverter: 'konvertere', yrkesdeltak: 'yrkesdeltakelse',
+  'arbeidsledighet selv': null, 'valgt minst': null,
+};
+
+export function signalWords(re: RegExp[]): string[] {
   const out: string[] = [];
   for (const r of re)
-    for (const alt of r.source.split('|')) {
-      const w = alt
-        .replace(/\\[bsdwSWD]/g, ' ')
-        .replace(/\(\?:|\(|\)|\[[^\]]*\]|[?*+^$\\{}]|\d+,?\d*\}/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (w.length >= 4 && /^[a-zæøåA-ZÆØÅ][a-zæøåA-ZÆØÅ .\-]+$/.test(w) && !out.includes(w)) out.push(w);
+    for (const raw of splitTopLevel(r.source)) {
+      const alt = raw.replace(/break\.\??even/g, 'break-even');
+      const open = (alt.match(/\((?!\?)/g) ?? []).length + (alt.match(/\(\?:/g) ?? []).length;
+      if (open !== (alt.match(/\)/g) ?? []).length) continue;
+      const bare = alt.replace(/\\b/g, '').replace(/\\s[+*]?/g, ' ').replace(/\(\?:|[()^$]/g, '');
+      if (/[.[\]*+?{}\\|]/.test(bare)) continue;
+      const w0 = bare.replace(/\s+/g, ' ').trim();
+      const w = w0 in STEM_FIX ? STEM_FIX[w0] : w0;
+      if (!w) continue;
+      if (w.length >= 4 && /^[a-zæøåA-ZÆØÅ][a-zæøåA-ZÆØÅ \-]+$/.test(w) && !out.includes(w)) out.push(w);
     }
   return out.slice(0, 4);
+}
+
+/** Deler et regex-mønster på | som ikke står inni en gruppe. */
+function splitTopLevel(src: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '\\') {
+      cur += ch + (src[i + 1] ?? '');
+      i++;
+      continue;
+    }
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    if (ch === '|' && depth === 0) {
+      parts.push(cur);
+      cur = '';
+    } else cur += ch;
+  }
+  parts.push(cur);
+  // En gruppe med bare alternativer rundt hele mønsteret («(?:a|b)») deles også.
+  if (parts.length === 1) {
+    const m = /^\\b?\(\?:(.*)\)\\b?$/.exec(src);
+    if (m && !/[()]/.test(m[1])) return m[1].split('|');
+  }
+  return parts;
 }
 
 export function kbLesson(kbId: string, prof = profile()): LessonRec {
@@ -288,17 +340,18 @@ export function kbLesson(kbId: string, prof = profile()): LessonRec {
   // Slik løses oppgavene i temaet, steg for steg (fra kunnskapsbasen).
   if (fam.solutionStructure.length >= 2) cards.push({ type: 'concept', title: 'Slik løser du denne typen oppgave', body: 'Nesten alle eksamensoppgavene i temaet følger denne rekkefølgen:', visual: { kind: 'flyt', items: fam.solutionStructure.slice(0, 6) } });
   const askedAs = intents.slice(0, 3).map((i) => i.label.toLowerCase());
-  for (const f of fam.formulas.slice(0, 4)) {
+  fam.formulas.slice(0, 4).forEach((f, fi) => {
     cards.push({
       type: 'formula',
       title: f.name,
       tex: f.tex,
       // «R_1, R_2» deles opp, så hver del kan farges i formelen.
       parts: f.symbols.flatMap((s) => s.sym.split(/\s*,\s*/).map((sym) => ({ tex: sym, meaning: `${s.meaning}${s.unit ? ` (${s.unit})` : ''}` }))).slice(0, 6),
-      whenToUse: [askedAs.length ? `Brukes når oppgaven handler om ${askedAs.join(', ')}.` : '', f.conditions[0] ? `Forutsetning: ${f.conditions[0]}` : '', f.whatIf[0] ? `Hvis noe endres: ${f.whatIf[0]}` : ''].filter(Boolean).join(' '),
+      // Hvilke oppgaver temaet handler om, står bare på det første formelkortet (det gjelder temaet, ikke hver formel).
+      whenToUse: [fi === 0 && askedAs.length ? `Temaet handler om ${askedAs.join(', ')}.` : '', f.conditions[0] ? `Forutsetning: ${f.conditions[0]}` : '', f.whatIf[0] ? `Hvis noe endres: ${f.whatIf[0]}` : ''].filter(Boolean).join(' '),
       formulaId: f.id,
     });
-  }
+  });
   // Et kontrollspørsmål midt i: helst et ekte eksamensspørsmål om temaet.
   const pool = [...examMc(kbId, 5, { figures: true }), ...templateMc(fam, 3)];
   const firstCheck = pool.shift();
@@ -312,12 +365,19 @@ export function kbLesson(kbId: string, prof = profile()): LessonRec {
   const ce = CALC_EXAMPLES[kbId];
   const cc = ce ? calcCard(ce[0], ce[1], prof.calculator) : null;
   if (cc) cards.push(cc);
+  // Regnetemaer uten flervalg: «Prøv selv» med en ny oppgave av samme type rett etter eksempelet
+  // (hente fram selv er det som gjør at det sitter). Fasiten er regnet ut av appen.
+  const numeric = templateNumeric(fam, 4);
+  if (!firstCheck && numeric[0]) {
+    const n = numeric.shift()!;
+    cards.push({ type: 'check', question: n.question, options: [], correct: -1, why: n.why, numeric: n.numeric, mascot: 'Nå er det din tur. Regn på papir eller kalkulator, og skriv svaret.' });
+  }
   // Kjennetegn: hvilke ord i oppgaven som avslører typen, og hva du da skal gjøre.
   const pat = intents
     .map((i) => ({ i, words: signalWords(i.match) }))
     .filter((x) => x.words.length)
     .slice(0, 4);
-  if (pat.length) cards.push({ type: 'patterns', title: 'Kjenn igjen spørsmålet', items: pat.map(({ i, words }) => ({ looksLike: `Står det ${words.map((w) => `«${w}»`).join(' eller ')}`, means: i.interpretation?.[0] ? `${i.assignment} ${i.interpretation[0]}` : i.assignment ?? '' })) });
+  if (pat.length) cards.push({ type: 'patterns', title: 'Kjenn igjen spørsmålet', items: pat.map(({ i, words }) => ({ looksLike: `${words.map((w) => `«${w}»`).join(' eller ')}`, means: i.interpretation?.[0] ? `${i.assignment} ${i.interpretation[0]}` : i.assignment ?? '' })) });
   // Ekte spørsmål fra eksamenene, koblet til mønsteret de passer med.
   const real = qs
     .filter((q) => q.text.length > 25)
@@ -328,6 +388,7 @@ export function kbLesson(kbId: string, prof = profile()): LessonRec {
   for (const m of fam.misconceptions.slice(0, 2)) cards.push({ type: 'trap', title: `Felle: ${m.label}`, body: m.explanation });
   if (fam.explanations?.analogy?.text) cards.push({ type: 'mnemonic', title: 'Husk det slik', body: fam.explanations.analogy.text });
   const quiz = pool.slice(0, 4);
+  if (quiz.length < 3) quiz.push(...numeric.slice(0, 3 - quiz.length));
   const now = nowIso();
   return {
     id: lessonId(store.ui.activeCourseId ?? '', kbId),
@@ -710,6 +771,7 @@ async function buildLesson(kbId: string, prof: LearnerProfile, onProgress?: (n: 
   // Fyll opp quizen med ekte eksamensspørsmål om temaet.
   const quiz = [...built.quiz, ...examMc(kbId, 2, { figures: true })].slice(0, 5);
   if (quiz.length < 3) quiz.push(...templateMc(fam, 3 - quiz.length));
+  if (quiz.length < 3) quiz.push(...templateNumeric(fam, 3 - quiz.length));
   const now = nowIso();
   const lesson: LessonRec = {
     id: lessonId(course.id, kbId),

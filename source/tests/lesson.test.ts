@@ -48,3 +48,10 @@ test('fargede formler: hver del farges, kommandoer og tekst røres ikke', () => 
   assert.match(t, /\\cdot/);
   assert.equal((t.match(/\\textcolor/g) ?? []).length, 3);
 });
+
+test('signalord viser hele ord, ikke regex-rester', async () => {
+  const { signalWords } = await import('../src/learning/lesson');
+  assert.deepEqual(signalWords([/nullpunkt|gå i null|break.?even|dekke kostnadene/i]), ['nullpunkt', 'gå i null', 'break-even', 'dekke kostnadene']);
+  assert.deepEqual(signalWords([/forklar|hvorfor.*likevekt|tolk\w*/i]), ['forklar']);
+  assert.deepEqual(signalWords([/skift|forskyv|flytte[sr]? (?:opp|ned)/i]), ['skift', 'forskyvning']);
+});
