@@ -9,6 +9,9 @@ import { configurePdfWorker } from './ingest/pdf';
 import { resumeInterrupted, migrateDocs } from './analysis/pipeline';
 import type { Route } from './state/store';
 import type { SettingsRec } from './domain/types';
+import { setOutboxScope } from './storage/outbox';
+import { findLeftovers, markLocalOwner } from './storage/leftovers';
+import { cleanupCandidates, runCleanup } from './storage/cleanup';
 
 (window as unknown as { __eksamensverksted: unknown }).__eksamensverksted = { store };
 
@@ -35,6 +38,7 @@ async function boot() {
   store.setUi({ loadingNote: 'Kobler til lagring …' });
   const platform = await initPlatform();
   store.platform = platform;
+  setOutboxScope(platform.uid);
 
   // 1. Velg lagring. Svarer ikke skylagringen, vises en feilside, ikke en tom app.
   let backend: Backend | null = null;
@@ -49,6 +53,7 @@ async function boot() {
     }
   }
   store.backend = backend;
+  if (allowLocal) markLocalOwner(platform.uid);
   store.setUi({
     storageKind: backend.kind,
     storageNote: allowLocal ? 'Skylagringen svarte ikke. Det du gjør nå, lagres bare i denne nettleseren.' : backend.describe,
@@ -75,6 +80,11 @@ async function boot() {
 
   // 3. Endringer som ikke ble bekreftet sist (siden ble lukket for tidlig), sendes nå.
   const replayed = await store.replayOutbox();
+  // Arbeid som ble lagret bare i nettleseren da skyen ikke svarte, tilbys lastet opp.
+  if (backend.kind === 'sky') {
+    const left = await findLeftovers(platform.uid, (k) => store.getByKey(k));
+    if (left) store.setUi({ localLeftovers: left });
+  }
 
   const s = store.list<SettingsRec>('settings')[0];
   const courses = store.courses();
@@ -83,6 +93,9 @@ async function boot() {
   const valid: Route['name'][] = ['start', 'arkiv', 'kart', 'tren', 'formel', 'utvikling', 'eksamen', 'innstillinger', 'status', 'ommeg'];
   store.setUi({ activeCourseId: active, ready: true, route: active ? { name: valid.includes(hash as Route['name']) ? (hash as 'start') : 'start' } : { name: 'velkommen' } });
   if (replayed) store.toast(`${replayed} endring${replayed === 1 ? '' : 'er'} som ikke rakk å bli lagret sist, er lagret nå.`, 'info');
+  // Rester av dokumenter som ble slettet midt i analysen, ryddes stille bort.
+  const orphans = cleanupCandidates({ orphansOnly: true }).items;
+  if (orphans.length) runCleanup(orphans);
   const m = await migrateDocs();
   if (m) store.toast(`${m} dokument${m === 1 ? '' : 'er'} leses og analyseres på nytt med forbedret lesing av bilder, figurer og flervalg.`, 'info');
   const n = m ? 0 : await resumeInterrupted();

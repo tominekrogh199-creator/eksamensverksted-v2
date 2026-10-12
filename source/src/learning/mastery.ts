@@ -71,9 +71,14 @@ function outcomeFor(skill: string, part: GenPart, a: PartAssessment, independent
 }
 
 export function evidenceForPart(att: Attempt, task: GeneratedTask | undefined, part: GenPart, a: PartAssessment, previous: Evidence[], context: Evidence['context'], ref: { type: 'gen' | 'subtask'; id: string }, structureKey: string, level: number): Evidence[] {
+  // Egenkontroll mot løsningsforslaget er aldri bevis for mestring.
+  if (part.selfCheck) return [];
   const support = supportLevel(att, part.id);
+  // Løsningen sett for akkurat denne deloppgaven (eller for hele oppgaven). Å se løsningen
+  // på a) gjør ikke b) uselvstendig.
+  const sawSolution = att.help.some((h) => h.level >= 5 && (h.partId === part.id || !h.partId));
   // Har studenten sagt at svaret var gjettet, teller det ikke som selvstendig mestring.
-  const independent = support <= 1 && !att.sawSolution && att.confidence !== 'gjettet';
+  const independent = support <= 1 && !sawSolution && att.confidence !== 'gjettet';
   const skills = [...new Set([...part.skills, ...part.methodCheckpoints.map((c) => c.skill)])];
   const out: Evidence[] = [];
   const now = nowIso();
@@ -97,7 +102,7 @@ export function evidenceForPart(att: Attempt, task: GeneratedTask | undefined, p
       at: now,
       outcome: o.outcome,
       supportLevel: support,
-      sawSolution: att.sawSolution,
+      sawSolution,
       variationLevel: level,
       structureKey,
       // Flervalg viser ikke overføring til en ny oppgavestruktur (man kan gjenkjenne svaret).

@@ -214,6 +214,9 @@ function SettingsForm() {
       </section>
       <section className="card stack">
         <h3>Personvern, eksport og sletting</h3>
+        <button className="src-link small" style={{ alignSelf: 'flex-start' }} onClick={() => store.navigate({ name: 'status' })}>
+          Hva appen kan, og hva som krever AI
+        </button>
         <p className="small muted">Appen logger ikke besvarelsene dine andre steder enn i lagringen over.</p>
         <div className="row">
           <button className="btn" onClick={exportData}>

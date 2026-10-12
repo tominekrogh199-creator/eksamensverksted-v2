@@ -6,6 +6,7 @@ import type { ExamSim, GeneratedTask, Attempt, SubTask, SourceDoc, GenPart } fro
 import { nowIso } from '../../domain/types';
 import { store, useStore } from '../../state/store';
 import { buildExam, reservedDocs, startAttempt, submitPart, taskFromSubtask, planSession, setReserved } from '../../learning/actions';
+import { flushAll } from '../flush';
 import { Workspace } from './Workspace';
 import { originalTask } from '../../learning/originals';
 import { buildExamLike, canMakeExamLike, examLikePlan } from '../../learning/examlike';
@@ -62,7 +63,10 @@ function startExam(exam: ExamSim) {
     const tasks = exam.subtaskIds
       .map((id) => store.get<SubTask>('subtask', id))
       .filter((s): s is SubTask => !!s)
-      .map((st) => (st.guide?.text || st.choices?.length ? originalTask(st) : null) ?? taskFromSubtask(st) ?? openTaskFromSubtask(st));
+      .map((st) => (st.guide?.text || st.choices?.length || st.answerKeys?.length || st.regions?.length ? originalTask(st) : null) ?? taskFromSubtask(st) ?? openTaskFromSubtask(st))
+      // På prøven finnes ingen løsningsforslag å sammenlikne med: egenkontrollen tas ut
+      // (i en egen kopi, så øvingsversjonen av oppgaven beholder den).
+      .map((t) => (t.parts.some((p) => p.selfCheck) && t.parts.some((p) => !p.selfCheck) ? { ...t, id: `${t.id}-prove`, parts: t.parts.filter((p) => !p.selfCheck) } : t));
     store.upsertMany(tasks);
     taskIds = tasks.map((t) => t.id);
   }
@@ -70,20 +74,47 @@ function startExam(exam: ExamSim) {
   store.upsert({ ...exam, taskIds, attemptIds: atts.map((a) => a.id), startedAt: nowIso(), status: 'pågår' });
 }
 
+const submittingExams = new Set<string>();
+
 async function submitExam(examId: string) {
+  const exam0 = store.get<ExamSim>('exam', examId);
+  // Én levering per prøve, også når tiden går ut mens studenten trykker «Lever».
+  if (!exam0 || exam0.status !== 'pågår' || submittingExams.has(examId)) return;
+  submittingExams.add(examId);
+  try {
+    await gradeExam(examId);
+  } finally {
+    submittingExams.delete(examId);
+    store.setBusy('exam', null);
+  }
+}
+
+async function gradeExam(examId: string) {
+  flushAll();
   const exam = store.get<ExamSim>('exam', examId)!;
-  store.setBusy('exam', 'Vurderer prøven …');
+  const jobs = exam.attemptIds.flatMap((aid) => (store.get<Attempt>('attempt', aid)?.parts ?? []).filter((p) => !p.submitted).map((p) => ({ aid, partId: p.partId })));
+  let done = 0;
+  store.setBusy('exam', `Vurderer prøven … 0 av ${jobs.length} svar`);
+  // Tre om gangen: tekstsvar vurderes av AI og tar noen sekunder hver.
+  for (let k = 0; k < jobs.length; k += 3) {
+    await Promise.all(
+      jobs.slice(k, k + 3).map(async (j) => {
+        await submitPart(j.aid, j.partId);
+        done++;
+        store.setBusy('exam', `Vurderer prøven … ${done} av ${jobs.length} svar`);
+      }),
+    );
+  }
   for (const aid of exam.attemptIds) {
     const a = store.get<Attempt>('attempt', aid);
-    if (!a) continue;
-    for (const p of a.parts) if (!p.submitted) await submitPart(aid, p.partId);
-    store.upsert({ ...store.get<Attempt>('attempt', aid)!, status: 'levert', submittedAt: nowIso() });
+    if (a) store.upsert({ ...a, status: 'levert', submittedAt: nowIso() });
   }
   const perTask: NonNullable<ExamSim['result']>['perTask'] = [];
   const failedFams = new Set<string>();
   const unanswered = new Set<string>();
   let usedOfficial = false;
   let notAssessed = 0;
+  let unknownGaps = 0;
   for (const aid of exam.attemptIds) {
     const a = store.get<Attempt>('attempt', aid)!;
     const t = store.get<GeneratedTask>('gen', a.taskRef.id)!;
@@ -126,7 +157,10 @@ async function submitExam(examId: string) {
       score += Math.round(frac * partMax * 10) / 10;
       if (frac < 0.99 && t.familyKbId !== 'ukjent') failedFams.add(t.familyKbId);
     }
-    perTask.push({ ref: t.id, title: t.title, score: Math.round(score * 10) / 10, max, verdict: !answered ? 'ikke besvart' : score >= max - 0.01 ? 'riktig' : score > 0 ? 'delvis' : 'feil', uncertain: answered > 0 && uncertain });
+    // Kunne ingen del vurderes (tekstsvar uten AI), er oppgaven «ikke vurdert», ikke «riktig».
+    const verdict = !answered ? 'ikke besvart' : max <= 0.001 ? 'ikke vurdert' : score >= max - 0.01 ? 'riktig' : score > 0 ? 'delvis' : 'feil';
+    if (t.familyKbId === 'ukjent' && (verdict === 'feil' || verdict === 'delvis' || verdict === 'ikke besvart')) unknownGaps++;
+    perTask.push({ ref: t.id, title: t.title, score: Math.round(score * 10) / 10, max, verdict, uncertain: answered > 0 && uncertain });
     if (!answered) for (const sk of t.skills) unanswered.add(sk);
   }
   const evs = store.evidence().filter((e) => exam.attemptIds.includes(e.attemptId) && !e.voided);
@@ -149,11 +183,11 @@ async function submitExam(examId: string) {
         ? 'Maks per oppgave er de offisielle poengene eller vektene fra settet der de er oppgitt (ellers ett treningspoeng per delsvar). Din poengsum er beregnet av appen (andel riktige delsvar × maks) og er et treningsanslag, ikke sensur.'
         : 'Poengene er treningspoeng laget av appen (ett poeng per delsvar eller nødvendig kriterium). De er ikke offisielle og sier ikke noe om karakter.',
       repairTaskIds: repair?.tasks.map((t) => t.id) ?? [],
+      unknownGaps,
       ...(notAssessed ? { pointsNote: `${official ? 'Maks per oppgave er de offisielle poengene eller vektene der de er oppgitt.' : 'Poengene er treningspoeng laget av appen.'} ${notAssessed} tekstsvar kunne ikke vurderes automatisk (AI var ikke tilgjengelig) og er holdt utenfor poengsummen. Sammenlikn dem selv med vurderingsrammen.` } : {}),
     },
   });
   if (exam.source.type === 'reservert' && store.get<SourceDoc>('doc', exam.source.docId)?.reserved) setReserved(exam.source.docId, false);
-  store.setBusy('exam', null);
 }
 
 export function Exam() {
@@ -171,7 +205,8 @@ function ExamSetup() {
   const course = useStore((s) => s.course());
   const reserved = useStore(() => reservedDocs());
   const exams = useStore((s) => s.exams());
-  const [minutes, setMinutes] = useState<number | ''>(course?.examInfo.durationMin ?? '');
+  // Tom som standard: et helt sett får eksamenstiden, en ny AI-prøve en passende kortere tid.
+  const [minutes, setMinutes] = useState<number | ''>('');
   const sets = useStore((s) => s.docs().filter((d) => isExamSet(d) && d.status !== 'duplikat' && !d.supersededBy && d.stages.analyse.status === 'ferdig'));
   const canAi = useStore(() => canMakeExamLike());
   const plan = useStore(() => (canAi ? examLikePlan() : []));
@@ -222,7 +257,7 @@ function ExamSetup() {
         <div className="field" style={{ maxWidth: 260 }}>
           <label htmlFor="ex-min">Tid for denne prøven (minutter)</label>
           <input id="ex-min" className="input" type="number" min={10} max={360} value={minutes} onChange={(e) => setMinutes(e.target.value ? Number(e.target.value) : '')} placeholder="foreslås ut fra oppgavene" />
-          <span className="hint">En kortere prøve enn hele eksamen er fint for trening.</span>
+          <span className="hint">Tomt: hele eksamenstiden for et tidligere sett, og en tilpasset tid for en ny prøve.</span>
         </div>
       </div>
       <div className="grid-2">
@@ -403,8 +438,8 @@ function ExamRunning({ exam }: { exam: ExamSim }) {
           >
             Gå over til øving
           </ConfirmButton>
-          <ConfirmButton className="btn small primary" confirmText="Levere hele prøven nå?" onConfirm={() => submitExam(exam.id)}>
-            Lever prøven
+          <ConfirmButton className="btn small primary" confirmText="Levere hele prøven nå?" onConfirm={() => submitExam(exam.id)} disabled={!!busy}>
+            {busy ? 'Leverer …' : 'Lever prøven'}
           </ConfirmButton>
         </div>
       </div>
@@ -468,7 +503,7 @@ function ExamResult({ exam }: { exam: ExamSim }) {
                     {Rat.fromNumber(t.score).toNo(1)} / {Rat.fromNumber(t.max).toNo(1)}
                   </td>
                   <td>
-                    <Pill tone={t.verdict === 'riktig' ? 'teal' : t.verdict === 'delvis' ? 'amber' : t.verdict === 'ikke besvart' ? 'outline' : 'red'}>{t.verdict}</Pill> {t.uncertain ? <Pill tone="outline">Usikker vurdering</Pill> : null}
+                    <Pill tone={t.verdict === 'riktig' ? 'teal' : t.verdict === 'delvis' ? 'amber' : t.verdict === 'ikke besvart' || t.verdict === 'ikke vurdert' ? 'outline' : 'red'}>{t.verdict}</Pill> {t.uncertain && t.verdict !== 'ikke vurdert' ? <Pill tone="outline">Usikker vurdering</Pill> : null}
                   </td>
                   <td>
                     <button className="src-link" onClick={() => store.navigate({ name: 'tren', attemptId: exam.attemptIds[i] })}>
@@ -513,8 +548,14 @@ function ExamResult({ exam }: { exam: ExamSim }) {
           </div>
         </section>
       ) : (
-        <Notice tone="teal">
-          <span className="small">Ingen tydelige hull på denne prøven. Neste steg er en ny prøve etter en pause, eller blandede oppgaver.</span>
+        <Notice tone={r.unknownGaps || r.perTask.some((t) => t.verdict === 'ikke vurdert') ? 'amber' : 'teal'}>
+          <span className="small">
+            {r.unknownGaps
+              ? `${r.unknownGaps} oppgave${r.unknownGaps === 1 ? '' : 'r'} gikk ikke helt, men appen vet ikke hvilket tema de hører til, så det ble ingen reparasjonsøkt. Se gjennomgangen av dem over.`
+              : r.perTask.some((t) => t.verdict === 'ikke vurdert')
+                ? 'Svarene som ble vurdert, var riktige. Tekstsvarene merket «ikke vurdert» må du sammenlikne selv med sensorveiledningen (Se gjennomgang).'
+                : 'Ingen tydelige hull på denne prøven. Neste steg er en ny prøve etter en pause, eller blandede oppgaver.'}
+          </span>
         </Notice>
       )}
     </div>

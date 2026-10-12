@@ -168,8 +168,10 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
   const mathLines = checks.filter((c) => c.statements.some((s) => s.status !== 'tekst')).length;
   // Et steg viser metode bare når det er en likning (to sider). Et løst tall eller uttrykk
   // («18», «1529,4kr») er et svar, ikke en utregning.
-  const stepLines = checks.filter((c) => c.statements.some((s) => s.status !== 'tekst' && s.statement.sides.length >= 2)).length;
-  const answerOnly = mathLines > 0 && checks.every((c) => c.statements.every((s) => s.status === 'tekst' || s.statement.sides.length < 2 || (s.statement.sides.length === 2 && (s.statement.sides[0].t === 'var' || s.statement.label) && varsIn(s.statement.sides[s.statement.sides.length - 1]).size === 0)));
+  const stepLines = checks.filter((c) => c.statements.some((s) => s.status !== 'tekst' && (s.statement.sides.length >= 2 || (s.statement.label && s.statement.sides[0] && s.statement.sides[0].t !== 'num')))).length;
+  // «x = 5», «konsum = 1580» og «Svar: 1580» er bare svar. «konsum = 230·6 + 200» viser oppsettet.
+  const plainNumber = (n: (typeof checks)[number]['statements'][number]['statement']['sides'][number]): boolean => n.t === 'num' || ((n.t === 'neg' || n.t === 'pct') && plainNumber(n.a));
+  const answerOnly = mathLines > 0 && checks.every((c) => c.statements.every((s) => s.status === 'tekst' || (s.statement.sides.length < 2 && (!s.statement.sides[0] || plainNumber(s.statement.sides[0]))) || (s.statement.sides.length === 2 && s.statement.sides[0].t === 'var' && plainNumber(s.statement.sides[1]))));
   let methodVerdict: PartAssessment['method']['verdict'];
   if (dev?.needsReadingConfirmation) methodVerdict = 'uavklart';
   else if (!mathLines || !stepLines) methodVerdict = 'ikke-vist';
@@ -209,8 +211,12 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
   // Med SI-enheter vises svaret med prefiks («RT = 6 kΩ»), ellers som før («konsum 1580»).
   const shownValue = (a: (typeof answers)[number]) => (part.math!.units === 'si' && a.given ? `${a.target.label} = ${eng(a.given.toNumber(), a.target.unit ?? '', 4)}` : `${a.target.label.toLowerCase()} ${a.given?.toNo(2)}${a.target.percent ? ' %' : ''}`);
   if (answerVerdict === 'riktig') fb.push(`Svaret er riktig: ${answers.map(shownValue).join(', ')}.`);
-  else if (answerVerdict === 'delvis') fb.push(`Noe av svaret er riktig: ${answers.filter((a) => a.verdict.startsWith('riktig')).map((a) => a.target.label.toLowerCase()).join(', ')}. ${answers.filter((a) => a.verdict === 'mangler').length ? `Mangler: ${answers.filter((a) => a.verdict === 'mangler').map((a) => a.target.label.toLowerCase()).join(', ')}.` : ''}`);
-  else if (answerVerdict === 'mangler') fb.push(`Fant ikke svaret. Skriv det som f.eks. «${part.targets[0].symbol} = …».`);
+  else if (answerVerdict === 'delvis') fb.push(`Noe av svaret er riktig: ${answers.filter((a) => a.verdict.startsWith('riktig')).map((a) => a.target.label.toLowerCase()).join(', ')}. ${answers.filter((a) => a.verdict === 'mangler').length ? `Fant ikke: ${answers.filter((a) => a.verdict === 'mangler').map((a) => a.target.label.toLowerCase()).join(', ')}. Skriv det som «${answers.find((a) => a.verdict === 'mangler')!.target.label.toLowerCase()} = …».` : ''}`);
+  else if (answerVerdict === 'mangler') {
+    // Aldri interne symbolnavn (x, s0) i teksten: bruk navnet på størrelsen.
+    const name = (t: (typeof part.targets)[number]) => (/^(x|y|s\d+|t\d+)$/.test(t.symbol) ? t.label.toLowerCase() : t.symbol);
+    fb.push(`Fant ikke svaret. Skriv det på en egen linje, f.eks. «${part.targets.map((t) => `${name(t)} = …`).join('» og «')}».`);
+  }
   else if (answerVerdict === 'feil' && dev && !dev.needsReadingConfirmation && methodVerdict === 'delvis') fb.push('Sluttsvaret blir feil på grunn av dette ene steget. Oppsettet ditt er godt.');
   else if (answerVerdict === 'feil') {
     // Tydelig beskjed når sluttsvaret er feil, også når stegene i seg selv henger sammen.
@@ -329,6 +335,7 @@ export async function assessExplanation(task: GeneratedTask | undefined, part: G
   const base: PartAssessment = mathPart ?? { at: nowIso(), method: { verdict: 'ikke-vist', checkpoints: [] }, answer: { verdict: 'ikke-relevant', items: [] }, readingIssues: [], feedback: '', basis: '', uncertain: false };
   const answer = [pa.explanation, ...pa.lines.map((l) => l.text)].filter((x) => x && x.trim()).join('\n');
   if (!answer.trim()) return { ...base, interpretation: { verdict: 'ikke-vurdert', basis: 'ikke-vurdert', criteria: [] }, feedback: 'Skriv forklaringen din først.' };
+  if (part.selfCheck && !self) return { ...base, interpretation: { verdict: 'ikke-vurdert', basis: 'ikke-vurdert', criteria: [] }, feedback: [base.feedback, 'Kryss av mot løsningsforslaget for å fullføre egenkontrollen.'].filter(Boolean).join(' ') };
   if (self) {
     const crit = rubric.map((r) => ({ id: r.id, text: r.text, verdict: self[r.id] ? 'oppfylt' : 'ikke-oppfylt' }));
     const req = rubric.filter((r) => r.required);

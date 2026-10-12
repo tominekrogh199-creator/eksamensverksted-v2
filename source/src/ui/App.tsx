@@ -18,14 +18,16 @@ import { Exam } from './screens/Exam';
 import { Settings } from './screens/Settings';
 import { Status } from './screens/Status';
 
+// Fanelinjen på mobil: det du bruker hver dag. Resten ligger i menyen (trykk på fagnavnet).
 const NAV: { name: Route['name']; label: string; short: string; icon: string; tab?: boolean }[] = [
-  { name: 'start', label: 'Hjem', short: 'Hjem', icon: 'home', tab: true },
-  { name: 'arkiv', label: 'Eksamensarkiv', short: 'Arkiv', icon: 'archive', tab: true },
-  { name: 'kart', label: 'Eksamenskart', short: 'Kart', icon: 'map', tab: true },
+  { name: 'start', label: 'Eksamensplan', short: 'Plan', icon: 'home', tab: true },
   { name: 'tren', label: 'Tren', short: 'Tren', icon: 'pencil', tab: true },
-  { name: 'formel', label: 'Forstå formelen', short: 'Formel', icon: 'book' },
-  { name: 'utvikling', label: 'Min utvikling', short: 'Meg', icon: 'chart', tab: true },
-  { name: 'eksamen', label: 'Eksamensmodus', short: 'Eksamen', icon: 'clock' },
+  { name: 'eksamen', label: 'Prøveeksamen', short: 'Prøve', icon: 'clock', tab: true },
+  { name: 'arkiv', label: 'Eksamensarkiv', short: 'Arkiv', icon: 'archive', tab: true },
+  { name: 'ommeg', label: 'Meg', short: 'Meg', icon: 'chart', tab: true },
+  { name: 'utvikling', label: 'Min utvikling', short: 'Utvikling', icon: 'target' },
+  { name: 'kart', label: 'Eksamenskart', short: 'Kart', icon: 'map' },
+  { name: 'formel', label: 'Formler', short: 'Formler', icon: 'book' },
 ];
 
 function go(name: Route['name']) {
@@ -89,7 +91,8 @@ export function App() {
   ) : active === 'start' || active === 'velkommen' ? (
     <PathHome />
   ) : active === 'laer' ? (
-    <Lesson />
+    // Ny leksjon (nytt tema eller quiz) = ny komponent, så ingen tilstand henger igjen.
+    <Lesson key={route.name === 'laer' ? `${route.kbId}-${route.part ?? ''}` : 'laer'} />
   ) : active === 'konkurranse' ? (
     <Compete />
   ) : active === 'ommeg' ? (
@@ -134,14 +137,8 @@ export function App() {
         <div className="rail-foot">
           {!noCourse ? (
             <>
-              <button className="nav-item" aria-current={active === 'ommeg' ? 'page' : undefined} onClick={() => go('ommeg')}>
-                <Icon name="sparkle" /> Om meg
-              </button>
               <button className="nav-item" aria-current={active === 'innstillinger' ? 'page' : undefined} onClick={() => go('innstillinger')}>
-                <Icon name="settings" /> Innstillinger
-              </button>
-              <button className="nav-item" aria-current={active === 'status' ? 'page' : undefined} onClick={() => go('status')}>
-                <Icon name="info" /> Funksjonsstatus
+                <Icon name="settings" /> Fag og innstillinger
               </button>
             </>
           ) : null}
@@ -180,7 +177,7 @@ export function App() {
         ) : null}
         <main id="innhold">{screen}</main>
       </div>
-      {!noCourse ? (
+      {!noCourse && !(active === 'eksamen' && route.name === 'eksamen' && route.examId && store.get<import('../domain/types').ExamSim>('exam', route.examId)?.status === 'pågår') ? (
         <nav className="tabbar" aria-label="Hovedmeny">
           {NAV.filter((n) => n.tab).map((n) => (
             <button key={n.name} className="tab" aria-current={active === n.name ? 'page' : undefined} onClick={() => go(n.name)}>
@@ -227,14 +224,8 @@ export function App() {
                 <Icon name={n.icon} /> {n.label}
               </button>
             ))}
-            <button className="nav-item" onClick={() => { go('ommeg'); setMenu(false); }}>
-              <Icon name="sparkle" /> Om meg
-            </button>
             <button className="nav-item" onClick={() => { go('innstillinger'); setMenu(false); }}>
-              <Icon name="settings" /> Innstillinger
-            </button>
-            <button className="nav-item" onClick={() => { go('status'); setMenu(false); }}>
-              <Icon name="info" /> Funksjonsstatus
+              <Icon name="settings" /> Fag og innstillinger
             </button>
           </div>
         </Sheet>

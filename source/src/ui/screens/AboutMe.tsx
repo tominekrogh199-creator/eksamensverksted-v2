@@ -1,12 +1,13 @@
-// Om meg: interesser, læringsmåte, tutorfigur, kalkulator og dagsmål.
+// Meg: fremgang, interesser, læringsmåte, tutorfigur, kalkulator og dagsmål.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LearnerProfile, CalculatorKind } from '../../domain/types';
 import { store, useStore } from '../../state/store';
 import { profile, saveProfile, game, levelOf, streakNow } from '../../learning/game';
 import { Mascot, MASCOTS } from '../components/Mascot';
 import { StatBar } from '../components/Game';
 import { Icon } from '../components/Icon';
+import { aiAvailable } from '../../ai/client';
 
 const INTEREST_CHOICES = ['Mote og klær', 'Trening', 'Kampsport', 'Musikk', 'Sosiale medier', 'Gründer og business', 'Mat og kafé', 'Reise', 'Gaming', 'Film og serier', 'Fotball', 'Natur og friluft', 'Skuespill', 'Bøker'];
 
@@ -27,6 +28,10 @@ export function AboutMe() {
   const course = useStore((s) => s.course());
   useStore((s) => s.get('game', 'spill'));
   const [custom, setCustom] = useState('');
+  // Navnefeltet har egen tilstand, så det kan tømmes mens du skriver et nytt navn.
+  const [mname, setMname] = useState(p.mascotName);
+  useEffect(() => setMname(p.mascotName), [p.mascotName]);
+  const defaults = [...MASCOTS.map((x) => x.defaultName), 'Uglis'];
   const g = game();
   const lv = levelOf(g.xp);
   const toggle = (i: string) => saveProfile({ interests: p.interests.includes(i) ? p.interests.filter((x) => x !== i) : [...p.interests, i] });
@@ -34,20 +39,25 @@ export function AboutMe() {
     <div className="page" style={{ maxWidth: 860 }}>
       <div className="page-head">
         <div className="stack sm">
-          <span className="eyebrow">Om meg</span>
-          <h1>Gjør læringen til din</h1>
-          <p className="muted">Valgene her styrer Lær-delen: eksemplene, hvordan det forklares, hvem som forklarer, og hvilken kalkulator du øver på.</p>
+          <span className="eyebrow">Meg</span>
+          <h1>Fremgang og innstillinger for læring</h1>
+          <p className="muted">Valgene her styrer Lær-delen: eksemplene, hvordan det vises, hvem som forklarer, og hvilken kalkulator du øver på.</p>
         </div>
       </div>
       <section className="card stack">
         <div className="row between">
           <h3>Fremgang</h3>
           <span className="small muted">
-            {g.xp} XP totalt · nivå {lv.level} · beste rekke {g.bestStreak} {g.bestStreak === 1 ? 'dag' : 'dager'}
+            {g.xp} poeng totalt · nivå {lv.level} · beste rekke {g.bestStreak} {g.bestStreak === 1 ? 'dag' : 'dager'}
           </span>
         </div>
         <StatBar />
-        <p className="xs muted">Poeng og dager på rad er for motivasjon. Mestringsbildet i «Min utvikling» bygger fortsatt bare på oppgaver du har løst selv.{streakNow(g) ? '' : ' Lær litt i dag for å starte en ny rekke.'}</p>
+        <p className="xs muted">Poeng er for motivasjon. Hva du faktisk kan, vises i «Min utvikling» og bygger bare på oppgaver du har løst selv.{streakNow(g) ? '' : ' Øv litt i dag for å starte en ny rekke.'}</p>
+        <div>
+          <button className="btn small" onClick={() => store.navigate({ name: 'utvikling' })}>
+            <Icon name="target" size={14} /> Se hva du mestrer
+          </button>
+        </div>
       </section>
       <section className="card stack">
         <h3>Hva heter du?</h3>
@@ -81,10 +91,11 @@ export function AboutMe() {
         <label className="row small" style={{ gap: 8 }}>
           <input type="checkbox" checked={p.personalize} onChange={(e) => saveProfile({ personalize: e.target.checked })} /> Bruk interessene mine i eksemplene
         </label>
-        <p className="xs muted">Interessene lagres privat på kontoen din og sendes til Claude bare når en leksjon lages og dette er slått på.</p>
+        <p className="xs muted">Interessene lagres privat på kontoen din og sendes til Claude bare når en leksjon lages og dette er slått på.{aiAvailable() ? '' : ' AI er ikke tilgjengelig her nå, så leksjonene bygges fra kunnskapsbasen og bruker ikke interessene.'}</p>
       </section>
       <section className="card stack">
         <h3>Hvordan vil du lære?</h3>
+        <p className="xs muted">Styrer hvordan kortene vises (diagrammer og figurer åpne eller lukket), og hvilken type kort AI legger vekt på neste gang en leksjon lages.</p>
         <div className="grid-3">
           {STYLES.map((s) => (
             <button key={s.id} className={`choice${p.learnStyle === s.id ? ' selected' : ''}`} onClick={() => saveProfile({ learnStyle: s.id })} aria-pressed={p.learnStyle === s.id}>
@@ -97,7 +108,7 @@ export function AboutMe() {
           ))}
         </div>
         <label className="row small" style={{ gap: 8 }}>
-          <input type="checkbox" checked={p.focusMode} onChange={(e) => saveProfile({ focusMode: e.target.checked })} /> Fokusmodus: ett kort om gangen, store knapper og en pustepause hvert femte kort
+          <input type="checkbox" checked={p.focusMode} onChange={(e) => saveProfile({ focusMode: e.target.checked })} /> Fokusmodus: kortere leksjoner med mindre tekst, større tutor og en kort pause hvert femte kort
         </label>
         <label className="row small" style={{ gap: 8 }}>
           <input type="checkbox" checked={p.sound} onChange={(e) => saveProfile({ sound: e.target.checked })} /> Lyd når du svarer riktig og fullfører
@@ -110,7 +121,7 @@ export function AboutMe() {
             <button
               key={m.id}
               className={`mascot-tile${p.mascot === m.id ? ' on' : ''}`}
-              onClick={() => saveProfile({ mascot: m.id, mascotName: MASCOTS.some((x) => x.defaultName === p.mascotName) ? m.defaultName : p.mascotName })}
+              onClick={() => saveProfile({ mascot: m.id, mascotName: defaults.includes(p.mascotName) ? m.defaultName : p.mascotName })}
               aria-pressed={p.mascot === m.id}
             >
               <Mascot kind={m.id} mood={p.mascot === m.id ? 'jubler' : 'glad'} size={84} />
@@ -120,7 +131,14 @@ export function AboutMe() {
         </div>
         <div className="field" style={{ maxWidth: 320 }}>
           <label htmlFor="mname">Navnet på tutoren</label>
-          <input id="mname" className="input" value={p.mascotName} onChange={(e) => saveProfile({ mascotName: e.target.value.slice(0, 24) || 'Uglis' })} />
+          <input
+            id="mname"
+            className="input"
+            value={mname}
+            maxLength={24}
+            onChange={(e) => setMname(e.target.value)}
+            onBlur={() => saveProfile({ mascotName: mname.trim() || MASCOTS.find((m) => m.id === p.mascot)?.defaultName || 'Bolt' })}
+          />
         </div>
       </section>
       <section className="card stack">
@@ -161,11 +179,11 @@ export function AboutMe() {
             [50, 'Intens'],
           ].map(([n, l]) => (
             <button key={n} className={`chip${p.dailyGoal === n ? ' on' : ''}`} onClick={() => saveProfile({ dailyGoal: Number(n) })} aria-pressed={p.dailyGoal === n}>
-              {l} · {n} XP
+              {l} · {n} poeng
             </button>
           ))}
         </div>
-        <p className="xs muted">En leksjon gir omtrent 30–50 XP, en oppgave du løser selv 15 XP.</p>
+        <p className="xs muted">En ny leksjon gir 20 poeng, pluss 5 for hvert kontrollspørsmål du får riktig på første forsøk og hver utregning du taster riktig. En oppgave du løser selv gir 15 poeng (5 med hjelp). Quizen gir poeng når du slår din beste.</p>
       </section>
     </div>
   );

@@ -440,7 +440,8 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
   const format = opts.format ?? pickFormat(kbId);
   const ex = examples(kbId, format);
   if (!ex.length) return { error: 'Fant ingen eksempler i dette formatet.' };
-  const wordLimit = /200 ord/i.test(ex.map((e) => `${e.intro ?? ''} ${e.text}`).join(' ')) ? 200 : 200;
+  const limitM = /(\d{2,4})\s*ord/i.exec(ex.map((e) => `${e.intro ?? ''} ${e.text}`).join(' '));
+  const wordLimit = limitM ? Math.min(400, Math.max(80, Number(limitM[1]))) : 200;
   const fam = getFamily(kbId);
   // Ferdighetene oppgaven tester, valgt av AI blant temaets ferdigheter (ellers bare den første).
   let skills = fam?.skills.slice(0, 1) ?? [];
@@ -458,7 +459,7 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
       const r = await aiJson(prompt, validateMc, { tier: 'complex', cache: false });
       if (!r.ok) {
         lastErr = r.message;
-        if (r.code !== 'validation') break;
+        if (!RETRYABLE.includes(r.code)) break;
         continue;
       }
       const mc = r.data;
@@ -472,6 +473,12 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
         lastErr = 'fasiten ble ikke bekreftet av kontrollen';
         continue;
       }
+      // Modellen legger ofte riktig svar først. Stokk alternativene (med forklaringene).
+      const order = [0, 1, 2, 3].slice(0, mc.options.length).sort(() => Math.random() - 0.5);
+      const fixLast = mc.options.findIndex((o) => /\b(alle|ingen) av (de|alternativene)/i.test(o));
+      if (fixLast >= 0) order.splice(order.indexOf(fixLast), 1), order.push(fixLast);
+      const shuffled = { ...mc, options: order.map((k) => mc.options[k]), explanations: order.map((k) => (mc.explanations[k] ?? '').replace(/\b(alternativ|svar) [A-D]\b/g, 'dette alternativet')), correct: order.indexOf(mc.correct) };
+      Object.assign(mc, shuffled);
       const part: GenPart = {
         id: 'a',
         label: 'a',
@@ -490,7 +497,7 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
       const r = await aiJson(prompt, validateShort, { tier: 'complex', cache: false });
       if (!r.ok) {
         lastErr = r.message;
-        if (r.code !== 'validation') break;
+        if (!RETRYABLE.includes(r.code)) break;
         continue;
       }
       const k = r.data;
@@ -518,7 +525,7 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
       const r = await aiJson(prompt, validateRegne, { tier: 'complex', cache: false });
       if (!r.ok) {
         lastErr = r.message;
-        if (r.code !== 'validation') break;
+        if (!RETRYABLE.includes(r.code)) break;
         continue;
       }
       const R = r.data;
@@ -560,7 +567,7 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
     const r = await aiJson(prompt, validateLong, { tier: 'complex', cache: false });
     if (!r.ok) {
       lastErr = r.message;
-      if (r.code !== 'validation') break;
+      if (!RETRYABLE.includes(r.code)) break;
       continue;
     }
     const L = r.data;
@@ -605,7 +612,15 @@ function checks(copied: number, mc: boolean) {
 
 // ——— Økter med eksamensnære oppgaver ———
 
+/** Feil der et nytt forsøk kan lykkes (ugyldig svar fra modellen, travelt). */
+const RETRYABLE = ['validation', 'invalid_json', 'empty_completion', 'upstream_error', 'rate_limited', 'timeout'];
+
 const generating = new Map<string, Promise<void>>();
+const stopped = new Set<string>();
+/** Stopper bakgrunnsgenereringen for en økt (studenten forlot den). */
+export function stopGeneration(sessionId: string) {
+  if (generating.has(sessionId)) stopped.add(sessionId);
+}
 
 /** Venter på at en bakgrunnsgenerering for økten er ferdig (brukes når studenten er på siste oppgave). */
 export function pendingGeneration(sessionId: string): Promise<void> | undefined {
@@ -657,7 +672,7 @@ export async function startExamLikeSession(count: number, onProgress?: (note: st
     updatedAt: now,
     type: 'eksamensnær',
     startedAt: now,
-    plan: { taskIds: [first.id], families: [...new Set(plan)], reason: 'Nye oppgaver i samme format, fra de samme temaene og på samme nivå som eksamenene dine. Temaer som kommer ofte, og temaer du har slitt med, kommer oftere.' },
+    plan: { taskIds: [first.id], families: [...new Set(plan)], targetCount: plan.length - (i - 1), reason: 'Nye oppgaver i samme format, fra de samme temaene og på samme nivå som eksamenene dine. Temaer som kommer ofte, og temaer du har slitt med, kommer oftere.' },
     currentIndex: 0,
   };
   store.upsert(session);
@@ -669,7 +684,9 @@ export async function startExamLikeSession(count: number, onProgress?: (note: st
     const p = (async () => {
       const avoid = [...recent, first!.parts[0]?.prompt ?? first!.intro];
       for (const kb of rest) {
+        if (stopped.has(session.id)) break;
         const r = await generateExamLike({ kbId: kb, avoid, format });
+        if (stopped.has(session.id)) break;
         if (!r.task) continue;
         store.upsert(r.task);
         avoid.push(r.task.parts[0]?.prompt ?? r.task.intro);
@@ -680,6 +697,10 @@ export async function startExamLikeSession(count: number, onProgress?: (note: st
     })().finally(() => {
       store.setBusy(key, null);
       generating.delete(session.id);
+      stopped.delete(session.id);
+      // Planen krymper til det som faktisk ble laget, så telleren ikke lover flere oppgaver.
+      const s = store.get<SessionRec>('session', session.id);
+      if (s && s.plan.targetCount && s.plan.targetCount > s.plan.taskIds.length) store.upsert({ ...s, plan: { ...s.plan, targetCount: s.plan.taskIds.length } });
     });
     generating.set(session.id, p);
   }

@@ -50,6 +50,36 @@ test('tastetrykk: lager riktige taster og kontrollerer dem i simulatoren', () =>
   }
 });
 
+test('kalkulator: regner videre med full presisjon etter et mellomsvar', () => {
+  // 1 ÷ 3 × 3 skal gi 1, ikke 0.9999999999 (mellomsvaret er mer presist enn displayet).
+  assert.equal(run('1 ÷ 3 × 3 ='), '1');
+  assert.equal(run('2 ÷ 3 × 3 ='), '2');
+  assert.equal(run('2 ÷ 3 + 1 ÷ 3 ='), '0.555555556', 'fra venstre mot høyre');
+});
+
+test('regneuttrykk: π, 1e-7, negative eksponenter og underforstått gange', () => {
+  assert.ok(Math.abs((evaluate('2π') ?? 0) - 2 * Math.PI) < 1e-12);
+  assert.ok(Math.abs((evaluate('1/(2·π·1000·100e-9)') ?? 0) - 1591.549) < 1e-3);
+  assert.equal(evaluate('10^-3'), 0.001);
+  assert.equal(evaluate('10^(−3)'), 0.001);
+  assert.equal(evaluate('2(3+4)'), 14);
+  assert.equal(evaluate('3√4'), 6);
+});
+
+test('tastetrykk: bytter rekkefølge på leddene før den tyr til minnet', () => {
+  const p = planKeys('120 − 20 + 3·5');
+  assert.ok(p);
+  assert.equal(p!.usesMemory, false, keysText(p!.keys));
+  assert.equal(p!.result, 115);
+});
+
+test('papir: for sammensatte uttrykk vises mellomsvarene', async () => {
+  const { paperSteps } = await import('../src/learning/calculator');
+  const st = paperSteps('(1+2)·(3+4) + (5+6)·(7+8)');
+  assert.ok(st && st.length >= 5);
+  assert.equal(st![st!.length - 1].value, 186);
+});
+
 test('tastetrykk: for sammensatt uttrykk gir null i stedet for feil taster', () => {
   assert.equal(planKeys('(1+2)·(3+4) + (5+6)·(7+8)'), null);
   assert.equal(planKeys('2^10'), null);

@@ -146,11 +146,11 @@ export function Empty({ icon, title, children, action }: { icon?: string; title:
 }
 
 /** Bekreftelse i selve siden (nettleserens confirm() fungerer ikke i artefakten). */
-export function ConfirmButton({ children, confirmText, onConfirm, className }: { children: ReactNode; confirmText: string; onConfirm: () => void; className?: string }) {
+export function ConfirmButton({ children, confirmText, onConfirm, className, disabled }: { children: ReactNode; confirmText: string; onConfirm: () => void; className?: string; disabled?: boolean }) {
   const [ask, setAsk] = useState(false);
-  if (!ask)
+  if (!ask || disabled)
     return (
-      <button className={className ?? 'btn small danger'} onClick={() => setAsk(true)}>
+      <button className={className ?? 'btn small danger'} onClick={() => setAsk(true)} disabled={disabled}>
         {children}
       </button>
     );

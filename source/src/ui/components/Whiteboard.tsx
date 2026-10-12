@@ -1,6 +1,6 @@
 // «Vis meg»: styrbar tavlegjennomgang bygd på den kontrollerte løsningen.
-// Graf, regnesteg og teksting bruker samme parametere. Kan eksporteres til en
-// ekte videofil (WebM) i nettleseren, med teksting men uten lyd.
+// Graf, regnesteg og teksting bruker samme parametere. Vises bare når løsningen
+// har nok regnesteg til at en gjennomgang faktisk gir noe (se boardWorthIt).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GeneratedTask, GenPart } from '../../domain/types';
@@ -9,8 +9,6 @@ import { Tex, texToSpeech, texToPlain } from './Math';
 import { EquilibriumGraph, CostGraph, PercentBars, axisFor, niceStep } from './Graphs';
 import { Icon } from './Icon';
 import { speak, ttsAvailable, norwegianVoice } from './Voice';
-import { store } from '../../state/store';
-import { offerDownload } from '../../storage/platform';
 
 export interface WbFrame {
   lines: string[];
@@ -57,6 +55,12 @@ export function buildWalkthrough(task: GeneratedTask, part: GenPart, detail: 'ko
     frames.push({ lines: [...lines], current: s.tex ? lines.length - 1 : -1, caption: cap.replace(/\.\./g, '.'), graph: { highlight: 'both', q: p.q ? n(p.q) : undefined } });
   });
   return frames;
+}
+
+/** En tavlegjennomgang er bare verdt å tilby når den har minst tre steg og minst to regnelinjer. */
+export function boardWorthIt(task: GeneratedTask, part: GenPart): boolean {
+  const f = buildWalkthrough(task, part, 'kort');
+  return f.length >= 3 && (f[f.length - 1]?.lines.length ?? 0) >= 2;
 }
 
 function GraphFor({ task, frame }: { task: GeneratedTask; frame: WbFrame }) {
@@ -161,230 +165,7 @@ export function Whiteboard({ task, part, onAsk }: { task: GeneratedTask; part: G
             Spør om dette steget
           </button>
         ) : null}
-        <VideoExport task={task} frames={frames} />
       </div>
-    </div>
-  );
-}
-
-// ——— Videoeksport ———
-
-function drawFrameToCanvas(ctx: CanvasRenderingContext2D, task: GeneratedTask, frames: WbFrame[], i: number, fade: number) {
-  const W = ctx.canvas.width;
-  const H = ctx.canvas.height;
-  const f = frames[i];
-  ctx.fillStyle = '#1d2a28';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#f2c14e';
-  ctx.font = '600 22px system-ui, sans-serif';
-  ctx.fillText(`${task.title} · Eksamensverksted`, 48, 52);
-  ctx.fillStyle = 'rgba(241,244,239,0.55)';
-  ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText(task.demo ? 'DEMO · generert øvingsoppgave' : 'Generert øvingsoppgave', 48, 80);
-  const all = frames[frames.length - 1].lines;
-  ctx.font = '30px "DejaVu Sans", system-ui, sans-serif';
-  all.forEach((l, k) => {
-    const shown = k < f.lines.length;
-    ctx.globalAlpha = shown ? (k === f.lines.length - 1 && k === f.current ? fade : 1) : 0.18;
-    if (k === f.current) {
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(40, 118 + k * 58, 600, 50);
-      ctx.fillStyle = '#f2c14e';
-      ctx.fillRect(40, 118 + k * 58, 5, 50);
-    }
-    ctx.fillStyle = '#f1f4ef';
-    ctx.fillText(texToPlain(l), 58, 153 + k * 58);
-  });
-  ctx.globalAlpha = 1;
-  const p = task.params;
-  if ((task.familyKbId === 'likevekt-lineaer' || task.familyKbId === 'likevekt-avgift') && p.a) {
-    const [a, b, c, d] = [n(p.a), n(p.b), n(p.c), n(p.d)];
-    const ax = axisFor(a, b, c, d);
-    const gx = 700;
-    const gy = 110;
-    const gw = 520;
-    const gh = 400;
-    const X = (q: number) => gx + (q / ax.qMax) * gw;
-    const Y = (pp: number) => gy + gh - (pp / ax.pMax) * gh;
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-    ctx.lineWidth = 1;
-    const sx = niceStep(ax.qMax);
-    const sy = niceStep(ax.pMax);
-    ctx.font = '15px system-ui, sans-serif';
-    ctx.fillStyle = '#cfd8d3';
-    for (let q = 0; q <= ax.qMax; q += sx) {
-      ctx.beginPath();
-      ctx.moveTo(X(q), Y(0));
-      ctx.lineTo(X(q), Y(ax.pMax));
-      ctx.stroke();
-      ctx.fillText(nf(q), X(q) - 8, Y(0) + 22);
-    }
-    for (let pp = 0; pp <= ax.pMax; pp += sy) {
-      ctx.beginPath();
-      ctx.moveTo(X(0), Y(pp));
-      ctx.lineTo(X(ax.qMax), Y(pp));
-      ctx.stroke();
-      ctx.fillText(nf(pp), X(0) - 36, Y(pp) + 5);
-    }
-    ctx.strokeStyle = '#cfd8d3';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(X(0), Y(ax.pMax));
-    ctx.lineTo(X(0), Y(0));
-    ctx.lineTo(X(ax.qMax), Y(0));
-    ctx.stroke();
-    ctx.fillText('P', X(0) - 8, gy - 10);
-    ctx.fillText('Q', X(ax.qMax) + 8, Y(0) + 5);
-    const line = (k: number, m: number, color: string) => {
-      const pts: [number, number][] = [];
-      for (let pp = 0; pp <= ax.pMax; pp += ax.pMax / 200) {
-        const q = k + m * pp;
-        if (q >= 0 && q <= ax.qMax) pts.push([X(q), Y(pp)]);
-      }
-      if (pts.length < 2) return;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (const pt of pts) ctx.lineTo(pt[0], pt[1]);
-      ctx.stroke();
-    };
-    line(a, -b, '#c3adfa');
-    line(c, d, '#7fd6c9');
-    if (f.graph?.priceLine !== undefined) {
-      ctx.setLineDash([8, 6]);
-      ctx.strokeStyle = '#f2c14e';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(X(0), Y(f.graph.priceLine));
-      ctx.lineTo(X(ax.qMax), Y(f.graph.priceLine));
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    if (f.graph?.showEq) {
-      ctx.fillStyle = '#f2c14e';
-      ctx.beginPath();
-      ctx.arc(X(ax.Q), Y(ax.P), 9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#f1f4ef';
-      ctx.font = '600 18px system-ui, sans-serif';
-      ctx.fillText(`(${nf(ax.Q)}, ${nf(ax.P)})`, X(ax.Q) + 14, Y(ax.P) - 12);
-    }
-  }
-  // Teksting
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(40, H - 150, W - 80, 110);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '24px system-ui, sans-serif';
-  const words = f.caption.split(' ');
-  let line = '';
-  let y = H - 108;
-  for (const w of words) {
-    const test = line ? line + ' ' + w : w;
-    if (ctx.measureText(test).width > W - 130) {
-      ctx.fillText(line, 64, y);
-      line = w;
-      y += 34;
-    } else line = test;
-  }
-  if (line) ctx.fillText(line, 64, y);
-}
-
-function VideoExport({ task, frames }: { task: GeneratedTask; frames: WbFrame[] }) {
-  const [state, setState] = useState<'idle' | 'lager' | 'klar' | 'feil'>('idle');
-  const [url, setUrl] = useState<string | null>(null);
-  const [blob, setBlob] = useState<Blob | null>(null);
-  const [info, setInfo] = useState('');
-  const supported = typeof MediaRecorder !== 'undefined' && typeof HTMLCanvasElement !== 'undefined' && 'captureStream' in HTMLCanvasElement.prototype;
-  useEffect(() => () => {
-    if (url) URL.revokeObjectURL(url);
-  }, [url]);
-  if (!supported) return <span className="xs faint">Videofil: nettleseren støtter ikke opptak av lerret</span>;
-  const make = async () => {
-    setState('lager');
-    setInfo('');
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1280;
-      canvas.height = 720;
-      const ctx = canvas.getContext('2d')!;
-      const stream = (canvas as HTMLCanvasElement & { captureStream: (fps: number) => MediaStream }).captureStream(30);
-      const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 2_500_000 } : undefined);
-      const chunks: Blob[] = [];
-      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-      const done = new Promise<void>((r) => (rec.onstop = () => r()));
-      rec.start(250);
-      for (let i = 0; i < frames.length; i++) {
-        const dur = Math.max(2600, frames[i].caption.length * 60);
-        const t0 = performance.now();
-        await new Promise<void>((res) => {
-          const tick = () => {
-            const el = performance.now() - t0;
-            drawFrameToCanvas(ctx, task, frames, i, Math.min(1, el / 500));
-            if (el < dur) requestAnimationFrame(tick);
-            else res();
-          };
-          tick();
-        });
-      }
-      rec.stop();
-      await done;
-      const b = new Blob(chunks, { type: 'video/webm' });
-      const u = URL.createObjectURL(b);
-      // Bekreft at filen faktisk kan spilles av.
-      const ok = await new Promise<number | null>((res) => {
-        const v = document.createElement('video');
-        v.preload = 'metadata';
-        v.onloadedmetadata = () => res(Number.isFinite(v.duration) ? v.duration : -1);
-        v.onerror = () => res(null);
-        v.src = u;
-        setTimeout(() => res(null), 6000);
-      });
-      if (ok === null) {
-        setState('feil');
-        setInfo('Videoen ble laget, men nettleseren kunne ikke bekrefte at den spilles av.');
-        URL.revokeObjectURL(u);
-        return;
-      }
-      setUrl(u);
-      setBlob(b);
-      setState('klar');
-      setInfo(`WebM, ${(b.size / 1024 / 1024).toFixed(1).replace('.', ',')} MB${ok > 0 ? `, ${Math.round(ok)} s` : ''}. Teksting er brent inn; filen har ikke lyd.`);
-    } catch (e) {
-      setState('feil');
-      setInfo(e instanceof Error ? e.message : 'Kunne ikke lage video.');
-    }
-  };
-  return (
-    <div className="stack sm" style={{ flex: 1, minWidth: 220 }}>
-      {state !== 'klar' ? (
-        <button className="btn small" onClick={make} disabled={state === 'lager'}>
-          <Icon name="video" size={16} />
-          {state === 'lager' ? 'Lager videofil …' : 'Lag videofil'}
-        </button>
-      ) : null}
-      {state === 'lager' ? <span className="xs muted">Spiller gjennomgangen i bakgrunnen og tar den opp. Tar omtrent like lang tid som videoen.</span> : null}
-      {url && state === 'klar' ? (
-        <div className="stack sm">
-          <video src={url} controls style={{ width: '100%', borderRadius: 12, background: '#000' }} />
-          <div className="row">
-            <span className="xs muted">{info}</span>
-            <button
-              className="btn small"
-              onClick={async () => {
-                if (!store.platform || !blob) return;
-                const r = await offerDownload(store.platform, `vis-meg-${task.templateId}.webm`, blob);
-                store.toast(r === 'lagret' ? 'Videofilen er lagret.' : r === 'avslått' ? 'Nedlasting avbrutt.' : 'Nedlasting er ikke tilgjengelig i denne visningen; videoen kan spilles av her.', r === 'lagret' ? 'ok' : 'info');
-              }}
-            >
-              <Icon name="download" size={16} />
-              Last ned
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {state === 'feil' ? <span className="xs" style={{ color: 'var(--amber)' }}>{info}</span> : null}
     </div>
   );
 }

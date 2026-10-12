@@ -1,5 +1,7 @@
-// Poeng (XP), dager på rad, dagsmål og rekorder. Dette er motivasjon, ikke
-// mestring: mestringsbildet bygger fortsatt bare på selvstendige prestasjoner.
+// Poeng, aktive dager, dagsmål og rekorder. Dette er motivasjon, ikke mestring:
+// mestringsbildet bygger fortsatt bare på selvstendige prestasjoner. Poeng gis for
+// det som faktisk er læring (riktig på første forsøk, oppgaver løst selv, fullført
+// leksjon), ikke for å klikke seg videre.
 
 import type { GameRec, LearnerProfile, CompetitionRun } from '../domain/types';
 import { nowIso } from '../domain/types';
@@ -28,8 +30,8 @@ export const DEFAULT_PROFILE: Omit<LearnerProfile, 'createdAt' | 'updatedAt'> = 
   interests: [],
   personalize: true,
   learnStyle: 'blanding',
-  mascot: 'ugle',
-  mascotName: 'Uglis',
+  mascot: 'robot',
+  mascotName: 'Bolt',
   calculator: 'enkel',
   dailyGoal: 30,
   sound: false,
@@ -39,7 +41,10 @@ export const DEFAULT_PROFILE: Omit<LearnerProfile, 'createdAt' | 'updatedAt'> = 
 export function profile(): LearnerProfile {
   const p = store.get<LearnerProfile>('profile', PROFILE_ID);
   const now = nowIso();
-  return { ...DEFAULT_PROFILE, createdAt: now, updatedAt: now, ...(p ?? {}) } as LearnerProfile;
+  const out = { ...DEFAULT_PROFILE, createdAt: now, updatedAt: now, ...(p ?? {}) } as LearnerProfile;
+  // Uglen er tatt ut; tidligere valg blir roboten.
+  if ((out.mascot as string) === 'ugle') return { ...out, mascot: 'robot', mascotName: out.mascotName === 'Uglis' ? 'Bolt' : out.mascotName };
+  return out;
 }
 
 export function saveProfile(patch: Partial<LearnerProfile>) {
@@ -82,6 +87,19 @@ export function streakNow(g = game()): number {
 
 export function todayXp(g = game()): number {
   return g.days[today()] ?? 0;
+}
+
+/** De siste sju dagene (eldst først), med poeng per dag. */
+export function lastWeek(g = game()): { day: string; label: string; points: number; today: boolean }[] {
+  const names = ['sø', 'ma', 'ti', 'on', 'to', 'fr', 'lø'];
+  const out = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const k = today(d);
+    out.push({ day: k, label: names[d.getDay()], points: g.days[k] ?? 0, today: i === 0 });
+  }
+  return out;
 }
 
 type Listener = (e: { amount: number; reason: string; goalReached: boolean }) => void;

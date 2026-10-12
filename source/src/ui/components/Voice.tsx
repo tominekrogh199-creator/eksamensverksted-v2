@@ -148,13 +148,9 @@ export function useDictation(onFinal: (text: string) => void) {
 
 export function MicButton({ onText }: { onText: (t: string) => void }) {
   const d = useDictation(onText);
-  if (d.status === 'utilgjengelig') return <span className="xs faint" title="Nettleseren støtter ikke talegjenkjenning">Tale til tekst: ikke støttet her</span>;
-  if (d.status === 'blokkert')
-    return (
-      <span className="xs faint" title={d.error ?? ''}>
-        Tale til tekst: mikrofon blokkert i denne visningen
-      </span>
-    );
+  // Ingen død knapp: er talegjenkjenning ikke støttet eller mikrofonen blokkert (som i
+  // artefaktvisningen på claude.ai), vises ingenting.
+  if (d.status === 'utilgjengelig' || d.status === 'blokkert') return null;
   return (
     <span className="row" style={{ gap: 6 }}>
       <button type="button" className={`icon-btn`} aria-pressed={d.status === 'lytter'} aria-label={d.status === 'lytter' ? 'Stopp opptak' : 'Snakk (tale til tekst)'} onClick={() => (d.status === 'lytter' ? d.stop() : d.start())} style={d.status === 'lytter' ? { background: 'var(--red-soft)', color: 'var(--red)' } : undefined}>

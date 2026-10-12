@@ -13,7 +13,7 @@ import { Icon } from '../components/Icon';
 import { DemoBadge, Notice, Pill, Progress, relTime } from '../components/common';
 import { demoEquilibriumTask } from '../../demo/demo';
 import { recommend } from '../../learning/recommend';
-import { canMakeExamLike, examTopicWeights, startExamLikeSession, pendingGeneration, formatPool, type ExamLikeFormat } from '../../learning/examlike';
+import { canMakeExamLike, examTopicWeights, startExamLikeSession, pendingGeneration, stopGeneration, formatPool, type ExamLikeFormat } from '../../learning/examlike';
 import { aiAvailable } from '../../ai/client';
 import { Spinner } from '../components/common';
 
@@ -174,11 +174,24 @@ function SessionRunner({ attemptId, sessionId }: { attemptId: string; sessionId?
   const att = useStore((s) => s.get<Attempt>('attempt', attemptId));
   const [waiting, setWaiting] = useState(false);
   useEffect(() => setWaiting(false), [attemptId]);
+  // Forlater studenten økten, stopper vi bakgrunnsgenereringen (sparer tid og AI-kvote).
+  useEffect(
+    () => () => {
+      const r = store.ui.route;
+      if (sessionId && !(r.name === 'tren' && r.sessionId === sessionId)) stopGeneration(sessionId);
+    },
+    [sessionId],
+  );
   if (!att) return <div className="page"><Notice tone="amber">Fant ikke forsøket.</Notice></div>;
   // En «ny variant» står ikke i planen; da fortsetter økten fra der den var.
   const planned = session ? session.plan.taskIds.indexOf(att.taskRef.id) : -1;
   const idx = session ? (planned >= 0 ? planned : Math.min(session.currentIndex ?? 0, session.plan.taskIds.length - 1)) : -1;
-  const total = session?.plan.taskIds.length ?? 0;
+  const ready = session?.plan.taskIds.length ?? 0;
+  const total = Math.max(ready, session?.plan.targetCount ?? 0);
+  const stillHere = () => {
+    const r = store.ui.route;
+    return r.name === 'tren' && r.attemptId === attemptId;
+  };
   const next = async () => {
     if (!session) {
       store.navigate({ name: 'tren' });
@@ -191,6 +204,8 @@ function SessionRunner({ attemptId, sessionId }: { attemptId: string; sessionId?
       setWaiting(true);
       while (pendingGeneration(session.id) && (store.get<SessionRec>('session', session.id)?.plan.taskIds.length ?? 0) <= ni) await new Promise((r) => setTimeout(r, 400));
       setWaiting(false);
+      // Gikk studenten et annet sted mens vi ventet, skal vi ikke dra henne tilbake.
+      if (!stillHere()) return;
     }
     const fresh = store.get<SessionRec>('session', session.id) ?? session;
     if (ni < fresh.plan.taskIds.length) {
@@ -212,10 +227,25 @@ function SessionRunner({ attemptId, sessionId }: { attemptId: string; sessionId?
           <div className="row between">
             <span className="small muted">
               {sessionTitle(session.type)} · oppgave {Math.max(1, idx + 1)} av {total}
+              {total > ready ? ` (${ready} klare)` : ''}
             </span>
-            <button className="btn small ghost" onClick={() => { endSession(session.id); store.navigate({ name: 'tren', sessionId: session.id }); }}>
-              Avslutt økten
-            </button>
+            <span className="row" style={{ gap: 6 }}>
+              {!att.parts.some((p) => p.submitted) && idx + 1 < total ? (
+                <button className="btn small ghost" disabled={waiting} title="Hopper over denne oppgaven uten å levere. Den teller ikke, verken som riktig eller feil." onClick={() => void next()}>
+                  Hopp over
+                </button>
+              ) : null}
+              <button
+                className="btn small ghost"
+                onClick={() => {
+                  stopGeneration(session.id);
+                  endSession(session.id);
+                  store.navigate({ name: 'tren', sessionId: session.id });
+                }}
+              >
+                Avslutt økten
+              </button>
+            </span>
           </div>
           <Progress value={Math.max(0, idx)} max={total} label="Framdrift i økten" />
           {session.plan.reason && idx === 0 ? <p className="small muted">{session.plan.reason}</p> : null}
@@ -234,8 +264,12 @@ export function sessionTitle(t: SessionRec['type']) {
 function SessionSummary({ sessionId }: { sessionId: string }) {
   const s = useStore((st) => st.get<SessionRec>('session', sessionId));
   const atts = useStore((st) => st.attempts().filter((a) => a.sessionId === sessionId));
+  // Sammendraget lages én gang (ikke under tegning av siden).
+  useEffect(() => {
+    if (s && !s.summary) endSession(sessionId);
+  }, [s, sessionId]);
   if (!s) return null;
-  const sum = s.summary ?? endSession(sessionId)?.summary;
+  const sum = s.summary;
   const indep = atts.some((a) => a.parts.some((p) => p.assessment?.answer.verdict === 'riktig' && p.assessment.method.verdict === 'riktig') && a.help.every((h) => h.level <= 1));
   return (
     <div className="page">

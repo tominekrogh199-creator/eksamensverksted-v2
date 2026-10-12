@@ -52,9 +52,10 @@ export function startAttempt(task: GeneratedTask, mode: Attempt['mode'] = 'læri
     status: 'pågår',
     timeSpentSec: 0,
   };
+  // Kursdokumentet skrives ikke her: det ble overskrevet ved hver oppgavestart og kunne
+  // viske ut endringer gjort på en annen enhet (f.eks. eksamensdato). «Uferdig oppgave» på
+  // Hjem finner siste forsøk direkte.
   store.upsert(att);
-  const c = store.course();
-  if (c) store.upsert({ ...c, lastActivity: { label: task.title, route: `tren:${att.id}`, at: now } });
   return att;
 }
 
@@ -200,13 +201,16 @@ export async function submitPart(attId: string, partId: string, opts: { self?: R
   const context: Evidence['context'] = att.mode === 'eksamen' ? 'eksamen' : att.mode === 'diagnose' ? 'diagnose' : 'øving';
   const evs = a.uncertain && a.method.verdict === 'uavklart' ? [] : evidenceForPart(att, task, part, a, prev, context, { type: 'gen', id: task.id }, task.structureKey, task.level);
   store.upsertMany(evs);
-  // XP for innsats og selvstendige løsninger (motivasjon; påvirker ikke mestringsbildet).
-  if (!a.uncertain) {
+  // Poeng og fremgang: én gang per deloppgave og forsøk, aldri for tomme svar, og
+  // bare når vurderingen er sikker (motivasjon; påvirker ikke mestringsbildet).
+  const blank = !pa.lines.some((l) => l.text.trim()) && !pa.explanation.trim() && !pa.images.length && pa.choiceId === undefined && pa.flawedLine === undefined && !(pa.graphPoints ?? []).some((g) => g.points.length);
+  if (!a.uncertain && !blank && !pa.counted && !part.selfCheck) {
     const indep = evs.some((e) => e.outcome === 'selvstendig-riktig');
     const ok = indep || a.answer.verdict === 'riktig' || a.interpretation?.verdict === 'oppfylt';
-    const xp = indep ? 15 : ok ? 8 : 3;
-    awardXp(xp, indep ? 'Løst selvstendig' : ok ? 'Riktig' : 'Levert', { kbId: task.familyKbId, courseId: task.courseId });
-    if (indep) patchTopic(task.familyKbId, { solved: (topicState(task.familyKbId, task.courseId).solved ?? 0) + 1 }, task.courseId);
+    if (indep || ok) awardXp(indep ? 15 : 5, indep ? 'Løst selvstendig' : 'Riktig med hjelp', { kbId: task.familyKbId, courseId: task.courseId });
+    const st = topicState(task.familyKbId, task.courseId);
+    patchTopic(task.familyKbId, { attempted: (st.attempted ?? 0) + 1, ...(indep ? { solved: (st.solved ?? 0) + 1 } : {}) }, task.courseId);
+    att = patchPart(store.get<Attempt>('attempt', attId)!, partId, { counted: true });
   }
   if (att.parts.every((p) => p.submitted)) att = store.upsert({ ...store.get<Attempt>('attempt', attId)!, status: 'levert', submittedAt: nowIso() });
   return att;
@@ -218,7 +222,8 @@ export function correctAssessment(attId: string, partId: string, reason: string)
   if (!att) return;
   const evs = voidEvidenceForAttempt(store.evidence().filter((e) => e.taskRef.partId === partId), attId, reason);
   store.upsertMany(evs);
-  const after = patchPart(att, partId, { submitted: false, assessment: undefined });
+  const cur = att.parts.find((p) => p.partId === partId);
+  const after = patchPart(att, partId, { submitted: false, assessment: undefined, reassessed: (cur?.reassessed ?? 0) + 1 });
   if (after.status === 'levert') store.upsert({ ...after, status: 'pågår', submittedAt: undefined });
   store.toast('Vurderingen er trukket tilbake og påvirker ikke mestringsbildet.', 'ok');
 }

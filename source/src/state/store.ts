@@ -2,11 +2,12 @@
 // kø som samler raske endringer til én skriving per dokument.
 
 import { useSyncExternalStore } from 'react';
-import type { Entity, EntityKind, Course, SourceDoc, PageRec, SubTask, Family, GeneratedTask, Attempt, Evidence, SessionRec, ExamSim, SettingsRec } from '../domain/types';
+import type { Entity, EntityKind, Course, SourceDoc, PageRec, SubTask, Family, GeneratedTask, Attempt, Evidence, SessionRec, ExamSim, SettingsRec, GameRec } from '../domain/types';
 import { entityKey, nowIso } from '../domain/types';
 import type { Backend } from '../storage/backend';
 import type { Platform } from '../storage/platform';
 import { outbox } from '../storage/outbox';
+import { mergeGame, sameGame } from '../learning/merge';
 
 export type Route =
   | { name: 'velkommen' }
@@ -55,6 +56,10 @@ interface UiState {
   loadErrorLocal?: boolean;
   busy: Record<string, string>;
   reducedMotion: boolean;
+  /** Endringer lagret bare i denne nettleseren (skyen svarte ikke), som kan lastes opp. */
+  localLeftovers?: number;
+  /** Lagringsgrensen for artefaktet er nådd. */
+  storageFull?: boolean;
 }
 
 interface PendingWrite {
@@ -180,6 +185,22 @@ class Store {
     let n = 0;
     for (const e of list) {
       const k = entityKey(e);
+      // Poeng og fremgang slås sammen felt for felt (begge enheter kan ha tjent poeng).
+      if (e.kind === 'game') {
+        const cur = this.entities.get(k) as GameRec | undefined;
+        if (!cur) {
+          this.entities.set(k, e);
+          this.lastWritten.set(k, signature(e));
+          n++;
+          continue;
+        }
+        const m = mergeGame(cur, e as GameRec);
+        if (!sameGame(m, cur)) {
+          this.upsert(m, { silent: true });
+          n++;
+        }
+        continue;
+      }
       if (this.pending.has(k) || this.inflight.has(k)) continue;
       const cur = this.entities.get(k);
       if (cur && (cur.updatedAt ?? '') >= (e.updatedAt ?? '')) continue;
@@ -234,6 +255,10 @@ class Store {
     if (!opts.localOnly) this.queue(key, 'put', next);
     if (!opts.silent) this.bump();
     return next;
+  }
+
+  getByKey(key: string): Entity | undefined {
+    return this.entities.get(key);
   }
 
   upsertMany(list: Entity[]) {
@@ -335,7 +360,12 @@ class Store {
       // For mange kall på kort tid: vent litt med alt, og prøv igjen.
       this.pauseLevel = Math.min(this.pauseLevel + 1, 5);
       this.pauseUntil = Date.now() + Math.min(30000, 1500 * 2 ** (this.pauseLevel - 1)) + Math.random() * 500;
-      retry(0);
+      // Vedvarer det, er det trolig grensen på antall lagrede elementer, ikke bare travelhet.
+      if (w.tries >= 5) {
+        this.failedWrites.set(key, 'Lagringen tar ikke imot flere endringer. Grensen for antall lagrede elementer kan være nådd. Rydd opp under Fag og innstillinger.');
+        if (!this.ui.storageFull) this.setUi({ storageFull: true });
+        retry(60000);
+      } else retry(0);
       this.save.message = 'Lagringen er travel. Prøver igjen straks.';
     } else if (code === 'invalid_argument' || code === 'transform_error') {
       // Kan ikke lagres slik det er. Et forsøk med lang samtale forsøkes kortet ned én gang.

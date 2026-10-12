@@ -341,6 +341,8 @@ export interface GenPart {
   methodCheckpoints: MethodCheckpoint[];
   givenSteps?: string[]; // for fading: steg som er gitt
   modelAnswer?: string;
+  /** Egenkontroll mot løsningsforslaget: alltid selvvurdering, teller aldri som mestring, og tas ikke med på prøver. */
+  selfCheck?: boolean;
 }
 
 export type CheckpointDetect =
@@ -444,6 +446,10 @@ export interface PartAttempt {
   confirmedReadings: Record<number, string>;
   assessment?: PartAssessment;
   submitted: boolean;
+  /** Poeng og fremgang er allerede gitt for denne deloppgaven (gis bare én gang per forsøk). */
+  counted?: boolean;
+  /** Hvor mange ganger vurderingen er trukket tilbake («Vurderingen er feil»). */
+  reassessed?: number;
 }
 
 export interface PartAssessment {
@@ -521,7 +527,7 @@ export interface SessionRec extends BaseEntity {
   type: 'grunnleggende' | 'nivå' | 'oppgaver' | 'familie' | 'repetisjon' | 'reparasjon' | 'fri' | 'eksamensspm' | 'eksamensnær';
   startedAt: string;
   endedAt?: string;
-  plan: { taskIds: ID[]; families: string[]; level?: number; targetMinutes?: number; reason: string };
+  plan: { taskIds: ID[]; families: string[]; level?: number; targetMinutes?: number; reason: string; /** Planlagt antall når resten lages i bakgrunnen. */ targetCount?: number };
   currentIndex: number;
   summary?: { selv: string[]; hjelp: string[]; neste: string[] };
 }
@@ -543,6 +549,8 @@ export interface ExamSim extends BaseEntity {
     perSkill: { skillId: string; outcome: string }[];
     pointsNote: string;
     repairTaskIds: ID[];
+    /** Oppgaver som ikke gikk, men som mangler tema (og derfor ikke fikk reparasjonsoppgaver). */
+    unknownGaps?: number;
   };
 }
 
@@ -554,7 +562,7 @@ export interface SettingsRec extends BaseEntity {
 
 // ——— Om meg, Lær-leksjoner og poeng ———
 
-export type MascotKind = 'ugle' | 'rev' | 'katt' | 'robot';
+export type MascotKind = 'robot' | 'rev' | 'katt';
 export type CalculatorKind = 'enkel' | 'casio' | 'texas';
 
 /** Studentens egne valg: interesser, læringsmåte, tutorfigur og kalkulator. Privat per bruker. */
@@ -589,7 +597,7 @@ export type LessonCard =
   | { type: 'patterns'; title: string; items: { looksLike: string; means: string }[]; mascot?: string }
   | { type: 'mnemonic'; title: string; body: string; mascot?: string }
   | { type: 'trap'; title: string; body: string; mascot?: string }
-  | { type: 'check'; question: string; options: string[]; correct: number; why: string; mascot?: string };
+  | { type: 'check'; question: string; options: string[]; correct: number; why: string; mascot?: string; figure?: { docId: string; page: number; box: [number, number, number, number] } };
 
 export interface QuizItem {
   question: string;
@@ -597,6 +605,10 @@ export interface QuizItem {
   correct: number;
   why: string;
   source: 'ai' | 'eksamen' | 'mal';
+  /** Figuren spørsmålet viser til (utsnitt fra originalen). */
+  figure?: { docId: string; page: number; box: [number, number, number, number] };
+  /** Regnespørsmål med tallsvar i stedet for alternativer. */
+  numeric?: { value: number; unit?: string; tol: number };
 }
 
 export interface LessonRec extends BaseEntity {
@@ -608,6 +620,8 @@ export interface LessonRec extends BaseEntity {
   personalized: boolean;
   /** Hva eksamen faktisk krever i temaet (AI-analysen), vist som «Dette spør eksamen om». */
   plan?: { mustKnow: string[]; skip: string[]; examUse: string };
+  /** Hele AI-analysen av eksamensspørsmålene, gjenbrukt når leksjonen lages på nytt. */
+  analysis?: unknown;
   cards: LessonCard[];
   quiz: QuizItem[];
   checks: { name: string; ok: boolean; detail: string }[];
@@ -631,7 +645,7 @@ export interface GameRec extends BaseEntity {
   streak: number;
   bestStreak: number;
   lastDay?: string;
-  topics: Record<string, { lessonDoneAt?: string; lessonCards?: number; quizBest?: number; quizMax?: number; solved?: number; xp?: number; lastAt?: string }>;
+  topics: Record<string, { lessonDoneAt?: string; lessonCards?: number; quizBest?: number; quizMax?: number; solved?: number; attempted?: number; xp?: number; lastAt?: string }>;
   chapters: Record<string, { best?: CompetitionRun; runs: number }>;
 }
 

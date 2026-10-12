@@ -91,6 +91,22 @@ function decimalsOf(n: Node): number | null {
   return null;
 }
 
+/**
+ * Er «rounded» en rimelig avrunding av «exact» med «dec» desimaler? Innenfor en halv
+ * enhet i siste siffer, OG svaret må ha minst to gjeldende sifre eller ligge innenfor
+ * 1 % av det eksakte. Ellers godtas 0 eller 1 for 0,5, og 3 for 2,5.
+ */
+export function roundingOk(exact: Rat, rounded: Rat, dec: number): boolean {
+  const tol = Rat.of(1n, 10n ** BigInt(dec)).mul(Rat.of(1, 2));
+  if (exact.sub(rounded).abs().cmp(tol) > 0) return false;
+  const digits = Math.round(Math.abs(rounded.toNumber()) * 10 ** dec)
+    .toString()
+    .replace(/^0+/, '').length;
+  if (digits >= 2) return true;
+  const e = Math.abs(exact.toNumber());
+  return e > 0 && Math.abs(exact.toNumber() - rounded.toNumber()) / e <= 0.01;
+}
+
 function checkPair(a: Node, b: Node, cc: CompiledContext): PairCheck {
   const ans = cc.ctx.answerSymbols ?? [];
   if ((a.t === 'var' && ans.includes(a.name) && !(a.name in cc.sol)) || (b.t === 'var' && ans.includes(b.name) && !(b.name in cc.sol))) {
@@ -114,10 +130,7 @@ function checkPair(a: Node, b: Node, cc: CompiledContext): PairCheck {
       [db, va, vb],
       [da, vb, va],
     ] as [number | null, Rat, Rat][]) {
-      if (dec !== null && dec <= 6) {
-        const tol = Rat.of(1n, 10n ** BigInt(dec)).mul(Rat.of(1, 2));
-        if (exact.sub(rounded).abs().cmp(tol) <= 0) return { left: a, right: b, verdict: 'avrundet', note: `Avrundet til ${dec} desimal${dec === 1 ? '' : 'er'}` };
-      }
+      if (dec !== null && dec <= 6 && roundingOk(exact, rounded, dec)) return { left: a, right: b, verdict: 'avrundet', note: `Avrundet til ${dec} desimal${dec === 1 ? '' : 'er'}` };
     }
     return { left: a, right: b, verdict: 'avvik' };
   } catch (e) {
@@ -487,6 +500,45 @@ export function checkAnswers(checks: LineCheck[], targets: AnswerTarget[], cc: C
     }
   }
   for (const [sym, { key }] of claimed) vals.set(sym, vals.get(key)!);
+  // Flere mål uten navn («70 kr per time», «107 800 kr»): finn hvert mål blant tallene eleven
+  // har regnet fram (siste side i hver linje). Bare treff på riktig verdi telles, så dette
+  // gjør aldri et galt svar riktig; det hindrer bare at riktige svar blir «mangler».
+  if (targets.length > 1 && targets.some((t) => !vals.has(t.symbol))) {
+    const cands: { value: Rat; raw: string; line: number; wasPercent: boolean; decimals: number | null; certain: boolean }[] = [];
+    for (const lc of checks) {
+      if (lc.status === 'uavklart-inndata' || lc.status === 'kan-ikke-lese') continue;
+      for (const sc of lc.statements) {
+        const st = sc.statement;
+        if (st.kind === 'text' || !st.sides.length) continue;
+        const last = st.sides[st.sides.length - 1];
+        if (varsIn(last).size) continue;
+        try {
+          const v = toRF(last, cc.env);
+          if (v.isConst()) cands.push({ value: v.constValue(), raw: lc.raw, line: lc.index, wasPercent: hasPercent(last), decimals: decimalsOf(last), certain: lc.source !== 'image' || lc.readingCertain !== false });
+        } catch {
+          /* hopp over */
+        }
+      }
+    }
+    const used = new Set<number>();
+    for (const t of targets) {
+      if (vals.has(t.symbol)) continue;
+      const exact = parseTargetValue(t.value);
+      const matches = (c: (typeof cands)[number]) => {
+        const v = t.percent && c.wasPercent ? c.value.mul(Rat.of(100)) : c.value;
+        if (v.eq(exact)) return true;
+        if (t.tolerance) return v.sub(exact).abs().cmp(Rat.parse(t.tolerance)) <= 0;
+        if (cc.ctx.units === 'si') return Math.abs(v.toNumber() - exact.toNumber()) <= Math.abs(exact.toNumber()) * 0.01;
+        return roundingOk(exact, v, Math.max(0, (c.decimals ?? 0) - (t.percent && c.wasPercent ? 2 : 0)));
+      };
+      for (let k = cands.length - 1; k >= 0; k--)
+        if (!used.has(k) && matches(cands[k])) {
+          used.add(k);
+          vals.set(t.symbol, cands[k]);
+          break;
+        }
+    }
+  }
   // Ett mål uten symbol: godta siste rene tallsvar.
   if (targets.length === 1 && !vals.has(targets[0].symbol)) {
     outer: for (let i = checks.length - 1; i >= 0; i--) {
@@ -535,8 +587,7 @@ export function checkAnswers(checks: LineCheck[], targets: AnswerTarget[], cc: C
     const dec = g.decimals ?? 0;
     const effDec = t.percent && g.wasPercent ? Math.max(0, dec - 2) : dec;
     if (effDec >= (t.minDecimals ?? 0)) {
-      const tol = Rat.of(1n, 10n ** BigInt(effDec)).mul(Rat.of(1, 2));
-      if (given.sub(exact).abs().cmp(tol) <= 0) return { target: t, verdict: 'riktig-avrundet' as AnswerVerdict, given, givenRaw: g.raw, lineIndex: g.line, note: `Avrundet til ${effDec} desimal${effDec === 1 ? '' : 'er'}.` };
+      if (roundingOk(exact, given, effDec)) return { target: t, verdict: 'riktig-avrundet' as AnswerVerdict, given, givenRaw: g.raw, lineIndex: g.line, note: `Avrundet til ${effDec} desimal${effDec === 1 ? '' : 'er'}.` };
     }
     return { target: t, verdict: 'feil' as AnswerVerdict, given, givenRaw: g.raw, lineIndex: g.line, note };
   });

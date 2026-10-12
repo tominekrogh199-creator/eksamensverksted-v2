@@ -5,7 +5,8 @@ import type { Attempt, GeneratedTask, GenPart, ChatMsg, PartAttempt } from '../.
 import { nowIso } from '../../domain/types';
 import { store } from '../../state/store';
 import { recordHelp } from '../../learning/actions';
-import { HELP_LEVELS, nextStepHint, understandText, chooseFormula, interpretHint, offlineAnswer, buildTutorContext, tutorRulesFor } from '../../learning/tutor';
+import { boardWorthIt } from './Whiteboard';
+import { HELP_LEVELS, nextStepHint, understandText, chooseFormula, interpretHint, offlineAnswer, buildTutorContext, tutorRulesFor, revealsAnswer } from '../../learning/tutor';
 import { tutorReply, explainStyleAi, tutorHelpAi } from '../../ai/prompts';
 import { aiAvailable } from '../../ai/client';
 import { getFamily, familyShort } from '../../families';
@@ -81,7 +82,14 @@ export function TutorPanel({ att, task, part, onShowBoard, disabled, compact }: 
     const r = await call({ signal: ctl.current.signal, onText: (t) => setStreaming(t) });
     setBusy(false);
     setStreaming(null);
-    if (r.ok && r.data?.trim()) addChat(curAtt(), { role: 'lærer', text: r.data.trim(), basis: 'ai', partId: part.id });
+    if (r.ok && r.data?.trim()) {
+      let a = addChat(curAtt(), { role: 'lærer', text: r.data.trim(), basis: 'ai', partId: part.id });
+      // Ga læreren svaret før levering, teller deloppgaven ikke som løst helt selv. Det sier vi rett ut.
+      if (!curPa().submitted && !a.help.some((h) => h.partId === part.id && h.level >= 4) && revealsAnswer(r.data, task, part)) {
+        a = recordHelp(a, { level: 4, type: 'løsning', partId: part.id, text: 'Svaret kom fram i samtalen' });
+        addChat(a, { role: 'system', text: 'Svaret kom fram i samtalen, så denne deloppgaven teller som løst med hjelp.', partId: part.id });
+      }
+    }
     else if (r.code !== 'cancelled') addChat(curAtt(), { role: 'lærer', text: fallback + (r.message ? `\n\n(AI-læreren svarte ikke: ${r.message})` : ''), basis: 'regelbasert', partId: part.id });
   };
 
@@ -209,7 +217,7 @@ export function TutorPanel({ att, task, part, onShowBoard, disabled, compact }: 
                 Helt annen forklaring
               </button>
             ) : null}
-            {part.solution.length ? (
+            {boardWorthIt(task, part) ? (
               <button
                 className="btn small soft"
                 onClick={() => {

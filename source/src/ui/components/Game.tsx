@@ -1,15 +1,15 @@
-// Små belønningselementer: dagsmål-ring, dager på rad, XP-sprett og konfetti.
+// Små belønningselementer: dagsmål, uka di, poeng og konfetti.
 
 import { useEffect, useState } from 'react';
 import { useStore } from '../../state/store';
-import { game, levelOf, onXp, profile, streakNow, todayXp } from '../../learning/game';
+import { game, lastWeek, levelOf, onXp, profile, streakNow, todayXp } from '../../learning/game';
 
 export function GoalRing({ value, goal, size = 44, label }: { value: number; goal: number; size?: number; label?: string }) {
   const r = size / 2 - 4;
   const c = 2 * Math.PI * r;
   const frac = Math.min(1, goal ? value / goal : 0);
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={label ?? `${value} av ${goal} XP i dag`} className="goal-ring">
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={label ?? `${value} av ${goal} poeng i dag`} className="goal-ring">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-3)" strokeWidth="5" />
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={frac >= 1 ? 'var(--teal)' : 'var(--accent)'} strokeWidth="5" strokeLinecap="round" strokeDasharray={`${c * frac} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
       <text x="50%" y="54%" textAnchor="middle" dominantBaseline="middle" fontSize={size * 0.26} fontWeight="700" fill="var(--ink)">
@@ -19,12 +19,18 @@ export function GoalRing({ value, goal, size = 44, label }: { value: number; goa
   );
 }
 
-export function Flame({ size = 20, on = true }: { size?: number; on?: boolean }) {
+/** Uka di: én prikk per dag, fylt når du har øvd. */
+export function WeekStrip() {
+  const days = lastWeek();
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2c1 4-3 5-3 9a3 3 0 0 0 6 0c0-1-.5-2-1-3 3 1 5 4 5 7a7 7 0 0 1-14 0c0-6 6-8 7-13z" fill={on ? '#f08c2e' : 'var(--line-strong)'} />
-      <path d="M12 13c.6 1.6-1.5 2.2-1.5 4a1.5 1.5 0 0 0 3 0c0-1.4-.6-2.6-1.5-4z" fill={on ? '#ffd43b' : 'var(--surface-3)'} />
-    </svg>
+    <span className="week-strip" aria-label={`Øvd ${days.filter((d) => d.points > 0).length} av de siste 7 dagene`}>
+      {days.map((d) => (
+        <span key={d.day} className={`wk${d.points > 0 ? ' on' : ''}${d.today ? ' today' : ''}`} title={`${d.label}: ${d.points} poeng`}>
+          <i />
+          <span className="xs">{d.label}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -46,7 +52,7 @@ export function Trophy({ size = 22, on = true }: { size?: number; on?: boolean }
   );
 }
 
-/** Dager på rad, XP i dag mot dagsmålet, og nivå. */
+/** Uka di, poeng i dag mot dagsmålet, og nivå. */
 export function StatBar({ compact }: { compact?: boolean }) {
   useStore((s) => s.get('game', 'spill'));
   useStore((s) => s.get('profile', 'meg'));
@@ -57,24 +63,22 @@ export function StatBar({ compact }: { compact?: boolean }) {
   const lv = levelOf(g.xp);
   return (
     <div className={`statbar${compact ? ' compact' : ''}`}>
-      <div className="stat" title="Dager på rad">
-        <Flame on={streak > 0} />
-        <strong>{streak}</strong>
-        {!compact ? <span className="xs muted">{streak === 1 ? 'dag' : 'dager'} på rad</span> : null}
-      </div>
+      {!compact ? (
+        <div className="stat" title={streak ? `${streak} dager på rad` : 'Ingen øving i dag ennå'}>
+          <WeekStrip />
+        </div>
+      ) : null}
       <div className="stat" title="Dagsmål">
         <GoalRing value={xpToday} goal={p.dailyGoal} size={compact ? 30 : 38} />
-        {!compact ? (
-          <span className="xs muted">
-            {xpToday} / {p.dailyGoal} XP i dag
-          </span>
-        ) : null}
+        <span className="xs muted">
+          {xpToday} / {p.dailyGoal} poeng i dag
+        </span>
       </div>
       <div className="stat" title="Nivå">
         <Star />
         <strong>Nivå {lv.level}</strong>
         {!compact ? (
-          <span className="lvl-bar" aria-label={`${g.xp - lv.from} av ${lv.to - lv.from} XP til neste nivå`}>
+          <span className="lvl-bar" aria-label={`${g.xp - lv.from} av ${lv.to - lv.from} poeng til neste nivå`}>
             <span style={{ width: `${Math.round(((g.xp - lv.from) / (lv.to - lv.from)) * 100)}%` }} />
           </span>
         ) : null}
@@ -95,7 +99,7 @@ export function Confetti({ n = 36 }: { n?: number }) {
   );
 }
 
-/** «+15 XP» som spretter opp øverst når du tjener poeng, og feiring når dagsmålet nås. */
+/** «+15 poeng» øverst når du tjener poeng, og feiring når dagsmålet nås. */
 export function XpBursts() {
   const [items, setItems] = useState<{ id: number; text: string; big?: boolean }[]>([]);
   useEffect(() => {
@@ -106,7 +110,7 @@ export function XpBursts() {
         setItems((x) => [...x, { id: k, text, big }]);
         window.setTimeout(() => setItems((x) => x.filter((y) => y.id !== k)), big ? 3200 : 1600);
       };
-      add(`+${e.amount} XP`);
+      add(`+${e.amount} poeng`);
       if (e.goalReached) add('Dagsmålet er nådd!', true);
     });
   }, []);

@@ -292,14 +292,14 @@ export function tutorRules(courseName: string, domain: string): string {
 Mål: at studenten forstår stoffet godt nok til å løse denne typen oppgave selv på eksamen, og vet hva sensor gir uttelling for.
 Tone: varm, presis og voksen. Gi konkret tilbakemelding på det studenten faktisk har gjort. Ikke ros egenskaper, ikke bruk utropstegn-ros, og ikke karakteriser studenten.
 Slik hjelper du:
-- Ta utgangspunkt i oppgaven, studentens forsøk og diagnosen appen gir deg. Diagnosen fra matematikkmotoren er pålitelig for tall og omforminger; ikke motsi den.
+- Ta utgangspunkt i oppgaven, studentens forsøk og diagnosen appen gir deg. Diagnosen fra matematikkmotoren er pålitelig for selve regningen (tall og omforminger). Sier den at svaret «mangler» eller at noe ikke kunne leses, kan det skyldes skrivemåten; si det heller enn å kalle svaret feil.
 - Forklar HVORFOR, ikke bare hva: hvilken modell eller sammenheng som gjelder, hvorfor den passer her, og hva den betyr. Bruk oppgavens egne tall og begreper.
 - Knytt forklaringen til eksamen når det er nyttig: hva sensorveiledningen ser etter, typiske feil sensor trekker for, og hvordan et godt svar bygges opp.
-- Følg hjelpenivået i forespørselen. Ikke gi sluttsvar eller fasit før studenten ber om full løsning (eller svaret allerede er levert og vurdert).
+- Følg hjelpenivået i forespørselen. Før deloppgaven er levert: ikke gi sluttsvaret, fasiten eller hvilket flervalgsalternativ som er riktig, heller ikke om studenten ber om det i chatten. Si da kort at knappen «Full løsning» viser hele løsningen (og at det teller som hjelp), og gi i stedet neste steg.
 - Skill mellom definisjon, modellantakelse, identitet og avledet sammenheng når du forklarer formler.
 - Hvis noe i bildeavlesningen er usikkert, avklar avlesningen før du kaller det en feil. Hvis du mangler informasjon, si det.
 - Avslutt med ett konkret neste steg eller ett kontrollspørsmål (ikke flere), med mindre du har gitt full løsning.
-Format: grundig nok til at forklaringen faktisk hjelper – vanligvis 6–14 setninger, gjerne delt i korte avsnitt eller en kort punktliste med «- ». Ingen overskrifter med #. Matematikk som ren tekst eller enkel LaTeX mellom $…$.`;
+Format: så kort som mulig, men grundig nok til at det faktisk hjelper. Følg lengden forespørselen ber om; ellers 4–10 setninger, gjerne delt i korte avsnitt eller en kort punktliste med «- ». Ingen overskrifter med #. Matematikk som ren tekst eller enkel LaTeX mellom $…$.`;
 }
 
 /** Hva studenten ba om (knappene i lærerpanelet), som instruks til læreren. */
@@ -313,7 +313,7 @@ export const HELP_INSTRUCTIONS: Record<string, string> = {
   formel: 'Studenten vil velge riktig modell eller formel: si hvilken modell, formel eller teori som passer, hvorfor akkurat den passer her, og hva symbolene betyr i denne oppgaven. Ikke regn ut svaret.',
   videre: 'Studenten vil regne videre: se på linjene og diagnosen, forklar hva neste steg er og hvorfor. Hvis et steg er feil, forklar feilen først.',
   tolke: 'Studenten vil tolke svaret: forklar hva resultatet betyr i situasjonen (enhet, rimelighet, økonomisk eller fysisk betydning), og hvordan det bør formuleres i et eksamenssvar.',
-  utelukk: 'Flervalg: gå gjennom alternativene ett for ett og vis hvordan man vurderer om hvert av dem stemmer med modellen fra kurset. Ikke si hvilket alternativ som er riktig.',
+  utelukk: 'Flervalg: vis fremgangsmåten for å utelukke alternativer: hvilke kjennetegn i et alternativ som avslører at det blander begreper, snur en sammenheng eller gjelder en annen modell. Gi studenten ett spørsmål å stille til hvert alternativ. Ikke vurder alternativene ett for ett, og ikke si hvilket som er riktig.',
   begrep: 'Flervalg: forklar hvilket begrep eller hvilken modell spørsmålet tester, og hva man må vite om det for å svare. Ikke si hvilket alternativ som er riktig.',
   krav: 'Hva må et svar på denne oppgaven inneholde for full uttelling? Bruk sensorveiledningen og vurderingsrammen hvis de finnes. Gi stikkord og en god rekkefølge for svaret, ikke ferdig tekst.',
   struktur: 'Vis hvordan et godt eksamenssvar på denne oppgaven bør bygges opp (innledning/definisjon, modell eller figur, mekanisme, konklusjon), med stikkord tilpasset oppgaven. Ikke skriv ferdig svar.',
@@ -349,7 +349,8 @@ export async function explainStyleAi(style: 'kort' | 'analogi' | 'utledning' | '
     annerledes: 'Forklar samme poeng på en helt annen måte enn standardforklaringen: nye ord, et nytt lite eksempel og gjerne en annen innfallsvinkel (figur i ord, tallforsøk eller motsatt tilfelle).',
   };
   const prompt = `${opts.rules ?? TUTOR_RULES}\n\n${DATA_RULE}\n\n${instr[style]}\nIkke gi fasit på studentens oppgave.\n${asData('KONTEKST', context, 12000)}`;
-  return aiText(prompt, { ...opts, tier: 'default', cache: true });
+  // «Forklar på en annen måte» skal gi noe nytt hver gang; de andre kan gjenbrukes en kort stund.
+  return aiText(prompt, { ...opts, tier: 'default', cache: style !== 'annerledes' });
 }
 
 export async function commentSketchAi(img: Blob, expected: string, opts: AiOpts = {}): Promise<AiResult<string>> {

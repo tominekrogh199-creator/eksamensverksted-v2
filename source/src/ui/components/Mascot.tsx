@@ -1,17 +1,17 @@
-// Tutorfigurene: egne, enkle SVG-figurer (ikke kjente maskoter). Studenten
-// velger figur og navn i «Om meg». Humøret styrer øyne, munn og bevegelse.
+// Tutorfigurene: egne, enkle SVG-figurer (ikke kjente maskoter). Standard er
+// roboten Bolt; studenten kan velge en annen figur og et annet navn under «Meg».
+// Humøret styrer øyne, munn og bevegelse.
 
 import type { MascotKind } from '../../domain/types';
-import { LessonText } from './LessonText';
+import { LessonText, plainMarks } from './LessonText';
 import { SpeakButton } from './Voice';
 
 export type Mood = 'glad' | 'tenker' | 'jubler' | 'oi';
 
 export const MASCOTS: { id: MascotKind; label: string; defaultName: string }[] = [
-  { id: 'ugle', label: 'Ugle med studenthatt', defaultName: 'Uglis' },
+  { id: 'robot', label: 'Robot', defaultName: 'Bolt' },
   { id: 'rev', label: 'Rev med briller', defaultName: 'Rikke' },
   { id: 'katt', label: 'Katt med hodetelefoner', defaultName: 'Kasper' },
-  { id: 'robot', label: 'Robot', defaultName: 'Bolt' },
 ];
 
 function Eyes({ mood, cx1, cx2, cy, r, pupil = '#2b1830' }: { mood: Mood; cx1: number; cx2: number; cy: number; r: number; pupil?: string }) {
@@ -33,41 +33,6 @@ function Eyes({ mood, cx1, cx2, cy, r, pupil = '#2b1830' }: { mood: Mood; cx1: n
       <circle cx={cx2 + dx} cy={cy + dy} r={pr} fill={pupil} />
       <circle cx={cx1 + dx + pr * 0.35} cy={cy + dy - pr * 0.35} r={pr * 0.3} fill="#fff" />
       <circle cx={cx2 + dx + pr * 0.35} cy={cy + dy - pr * 0.35} r={pr * 0.3} fill="#fff" />
-    </g>
-  );
-}
-
-function Owl({ mood }: { mood: Mood }) {
-  return (
-    <g>
-      {/* kropp */}
-      <ellipse cx="60" cy="72" rx="34" ry="38" fill="#7a5aa6" />
-      <ellipse cx="60" cy="82" rx="22" ry="25" fill="#f3e6d3" />
-      <path d="M44 74 q4 4 8 0 M52 84 q4 4 8 0 M60 74 q4 4 8 0 M68 84 q4 4 8 0" stroke="#d9c4a8" strokeWidth="2" fill="none" strokeLinecap="round" />
-      {/* vinger */}
-      {mood === 'jubler' ? (
-        <>
-          <path d="M27 66 q-14 -18 -6 -30 q8 10 12 26 z" fill="#5f4387" />
-          <path d="M93 66 q14 -18 6 -30 q-8 10 -12 26 z" fill="#5f4387" />
-        </>
-      ) : (
-        <>
-          <path d="M27 62 q-8 22 6 34 q2 -18 -6 -34 z" fill="#5f4387" />
-          <path d="M93 62 q8 22 -6 34 q-2 -18 6 -34 z" fill="#5f4387" />
-        </>
-      )}
-      {/* ansikt */}
-      <circle cx="47" cy="52" r="13" fill="#efe3f7" />
-      <circle cx="73" cy="52" r="13" fill="#efe3f7" />
-      <Eyes mood={mood} cx1={47} cx2={73} cy={52} r={8} />
-      <path d={mood === 'oi' ? 'M57 63 l3 6 l3 -6 z' : 'M55 61 l5 8 l5 -8 z'} fill="#f0a23b" />
-      {/* føtter */}
-      <path d="M48 108 l-3 5 M52 108 l0 6 M56 108 l3 5 M64 108 l-3 5 M68 108 l0 6 M72 108 l3 5" stroke="#f0a23b" strokeWidth="3" strokeLinecap="round" />
-      {/* studenthatt */}
-      <path d="M60 14 l30 11 l-30 11 l-30 -11 z" fill="#2b1830" stroke="#9b80c8" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M44 30 v8 q16 8 32 0 v-8 l-16 6 z" fill="#3b2541" stroke="#9b80c8" strokeWidth="1.2" strokeLinejoin="round" />
-      <path d="M88 25 v14" stroke="#e8b931" strokeWidth="2.4" />
-      <circle cx="88" cy="41" r="3" fill="#e8b931" />
     </g>
   );
 }
@@ -118,37 +83,69 @@ function Cat({ mood }: { mood: Mood }) {
 }
 
 function Robot({ mood }: { mood: Mood }) {
-  const eye = mood === 'oi' ? '#ec8697' : '#5ee6c8';
+  const eye = mood === 'oi' ? '#ff8fa3' : '#5ee6c8';
+  const line = '#4a4f78';
+  const up = mood === 'jubler';
   return (
-    <g>
-      <path d="M60 10 v14" stroke="#4b3a55" strokeWidth="3" />
-      <circle cx="60" cy="9" r="5" fill={mood === 'jubler' ? '#e8b931' : '#ec8697'} />
-      <rect x="24" y="24" width="72" height="56" rx="16" fill="#9aa7c7" />
-      <rect x="32" y="34" width="56" height="34" rx="10" fill="#26304a" />
-      {mood === 'jubler' ? (
-        <g stroke={eye} strokeWidth="3.4" fill="none" strokeLinecap="round">
-          <path d="M40 54 q6 -8 12 0" />
-          <path d="M68 54 q6 -8 12 0" />
+    <g strokeLinejoin="round">
+      {/* antenne */}
+      <path d="M60 22 v-10" stroke={line} strokeWidth="3" strokeLinecap="round" />
+      <circle cx="60" cy="9" r="5.5" fill={up ? '#ffd43b' : '#8f7cf0'} stroke={line} strokeWidth="1.5" />
+      {/* armer */}
+      {up ? (
+        <g stroke={line} strokeWidth="4" strokeLinecap="round" fill="none">
+          <path d="M26 82 q-12 -10 -10 -26" />
+          <path d="M94 82 q12 -10 10 -26" />
+        </g>
+      ) : mood === 'tenker' ? (
+        <g stroke={line} strokeWidth="4" strokeLinecap="round" fill="none">
+          <path d="M26 84 q-8 10 -4 20" />
+          <path d="M94 84 q10 -4 -2 -14" />
+        </g>
+      ) : (
+        <g stroke={line} strokeWidth="4" strokeLinecap="round" fill="none">
+          <path d="M26 84 q-8 10 -4 20" />
+          <path d="M94 84 q8 10 4 20" />
+        </g>
+      )}
+      <circle cx={up ? 16 : 22} cy={up ? 54 : 105} r="5" fill="#c9cfe6" stroke={line} strokeWidth="1.5" />
+      <circle cx={up ? 104 : mood === 'tenker' ? 91 : 98} cy={up ? 54 : mood === 'tenker' ? 69 : 105} r="5" fill="#c9cfe6" stroke={line} strokeWidth="1.5" />
+      {/* blyant i hånden */}
+      {!up && mood !== 'tenker' ? (
+        <g transform="rotate(-30 100 104)">
+          <rect x="97" y="88" width="6" height="18" rx="1.5" fill="#ffd43b" stroke={line} strokeWidth="1.2" />
+          <path d="M97 106 l3 6 l3 -6 z" fill="#f3d9b1" stroke={line} strokeWidth="1.2" />
+        </g>
+      ) : null}
+      {/* kropp */}
+      <rect x="34" y="78" width="52" height="34" rx="12" fill="#c9cfe6" stroke={line} strokeWidth="2" />
+      <rect x="46" y="86" width="28" height="16" rx="5" fill="#2a2f55" />
+      <path d="M53 92 h14 M53 96 h14" stroke="#5ee6c8" strokeWidth="2" strokeLinecap="round" />
+      {/* hode */}
+      <rect x="22" y="22" width="76" height="58" rx="20" fill="#dfe3f5" stroke={line} strokeWidth="2.2" />
+      <rect x="31" y="32" width="58" height="38" rx="13" fill="#2a2f55" />
+      {up ? (
+        <g stroke={eye} strokeWidth="3.6" fill="none" strokeLinecap="round">
+          <path d="M40 52 q6 -8 12 0" />
+          <path d="M68 52 q6 -8 12 0" />
         </g>
       ) : (
         <g fill={eye}>
-          <rect x={mood === 'tenker' ? 44 : 41} y={mood === 'tenker' ? 44 : 46} width="10" height="10" rx="3" />
-          <rect x={mood === 'tenker' ? 72 : 69} y={mood === 'tenker' ? 44 : 46} width="10" height="10" rx="3" />
+          <rect x={mood === 'tenker' ? 44 : 41} y={mood === 'tenker' ? 41 : 44} width="10" height={mood === 'oi' ? 6 : 11} rx="3.5" />
+          <rect x={mood === 'tenker' ? 72 : 69} y={mood === 'tenker' ? 41 : 44} width="10" height={mood === 'oi' ? 6 : 11} rx="3.5" />
         </g>
       )}
-      <path d={mood === 'oi' ? 'M54 63 h12' : 'M52 61 q8 5 16 0'} stroke={eye} strokeWidth="2.4" fill="none" strokeLinecap="round" />
-      <rect x="18" y="44" width="6" height="16" rx="3" fill="#7d8aab" />
-      <rect x="96" y="44" width="6" height="16" rx="3" fill="#7d8aab" />
-      <rect x="36" y="84" width="48" height="30" rx="10" fill="#8492b5" />
-      <circle cx="60" cy="98" r="6" fill="#e8b931" />
+      <path d={mood === 'oi' ? 'M53 62 q7 -4 14 0' : 'M51 60 q9 6 18 0'} stroke={eye} strokeWidth="2.6" fill="none" strokeLinecap="round" />
+      <circle cx="36" cy="64" r="3" fill="#ff8fa3" opacity="0.7" />
+      <circle cx="84" cy="64" r="3" fill="#ff8fa3" opacity="0.7" />
     </g>
   );
 }
 
-export function Mascot({ kind = 'ugle', mood = 'glad', size = 72, label }: { kind?: MascotKind; mood?: Mood; size?: number; label?: string }) {
+export function Mascot({ kind = 'robot', mood = 'glad', size = 72, label }: { kind?: MascotKind; mood?: Mood; size?: number; label?: string }) {
   return (
     <svg className={`mascot mood-${mood}`} width={size} height={size} viewBox="0 0 120 120" role="img" aria-label={label ?? MASCOTS.find((m) => m.id === kind)?.label}>
-      {kind === 'rev' ? <Fox mood={mood} /> : kind === 'katt' ? <Cat mood={mood} /> : kind === 'robot' ? <Robot mood={mood} /> : <Owl mood={mood} />}
+      {kind === 'rev' ? <Fox mood={mood} /> : kind === 'katt' ? <Cat mood={mood} /> : <Robot mood={mood} />}
     </svg>
   );
 }
@@ -162,7 +159,7 @@ export function MascotSays({ kind, name, mood = 'glad', text, size = 64, speak =
         <span className="bubble-name">{name}</span>
         {text ? <LessonText text={text} /> : null}
         {children}
-        {speak && text ? <SpeakButton text={text.replace(/\{\{\d:([^}]*)\}\}/g, '$1').replace(/\$/g, '')} label="Les opp" /> : null}
+        {speak && text ? <SpeakButton text={plainMarks(text).replace(/\$/g, '')} label="Les opp" /> : null}
       </div>
     </div>
   );

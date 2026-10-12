@@ -12,7 +12,8 @@ import { effectiveLines } from '../../learning/assess';
 import { LinesEditor, LineStatusView } from '../components/LinesEditor';
 import { eng } from '../../families/el-common';
 import { TutorPanel, addChat, StepList } from '../components/TutorPanel';
-import { Whiteboard } from '../components/Whiteboard';
+import { Whiteboard, boardWorthIt } from '../components/Whiteboard';
+import { onFlush } from '../flush';
 import { EquilibriumGraph } from '../components/Graphs';
 import { Tex, RichText } from '../components/Math';
 import { Icon } from '../components/Icon';
@@ -237,7 +238,6 @@ export function Workspace({ attemptId, onNext, onExit }: { attemptId: string; on
           />
         </Sheet>
       ) : null}
-      {tutorOpen ? null : null}
     </div>
   );
 }
@@ -340,6 +340,8 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
     saveTimer.current = setTimeout(flushPatch, 350);
   };
   useEffect(() => () => flushPatch(), []);
+  // Prøven kan leveres utenfra (tiden er ute); da må det som er skrevet, lagres først.
+  useEffect(() => onFlush(() => flushPatch()), []);
   const symbols = useMemo(() => [...new Set([...(part.math?.symbols ?? []), ...Object.keys(part.math?.solution ?? {}), ...(part.targets ?? []).map((t) => t.symbol)])], [part]);
   const submitted = pa.submitted;
   const a = pa.assessment;
@@ -358,8 +360,9 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
     else if (c.status === 'tekst') st = { tone: 'warn', text: 'Tekst – vurderes ikke som regnesteg' };
     else if (c.status === 'kan-ikke-lese') st = { tone: 'warn', text: `Kan ikke leses: ${c.error}` };
     else st = { tone: 'warn', text: c.statements.flatMap((s) => s.pairs.map((p) => p.note)).filter(Boolean)[0] ?? 'Kan ikke kontrolleres automatisk' };
-    setStatuses({ ...statuses, [focusLine]: st });
     const nChecks = checks + 1;
+    if (nChecks === 3) st = { ...st, text: `${st.text}. Fra nå teller kontrollene som hjelp.` };
+    setStatuses({ ...statuses, [focusLine]: st });
     setChecks(nChecks);
     recordHelp(cur(), { level: nChecks >= 3 ? 2 : 1, type: 'sjekk-steg', partId: part.id, text: `Linje ${focusLine + 1}` });
   };
@@ -378,6 +381,21 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
       store.toast(part.kind === 'flervalg' ? 'Velg et alternativ før du leverer.' : 'Skriv svaret ditt før du leverer.', 'info');
       return;
     }
+    // Åpne spørsmål om hvordan et tall skal leses, eller en avlesning fra bilde som ikke er
+    // bekreftet: avklar først, ellers låses deloppgaven som «uavklart» uten vurdering.
+    if (part.math) {
+      const el = effectiveLines({ ...pa, lines });
+      const { checks: cs } = checkWorkBest(el.texts, part.math, { resolutions: pa.resolutions, uncertainLines: el.uncertain, sources: el.sources });
+      const open = cs.find((c) => c.status === 'uavklart-inndata');
+      const unsure = [...el.uncertain][0];
+      if (open || unsure !== undefined) {
+        const i = open ? open.index : unsure!;
+        setFocusLine(i);
+        store.toast(open ? `Svar på spørsmålet ved linje ${i + 1} først, så vurderes svaret riktig.` : `Bekreft avlesningen av linje ${i + 1} fra bildet først.`, 'info');
+        document.querySelectorAll<HTMLElement>('.lines .line')[i]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+    }
     setSubmitting(true);
     flushPatch();
     patchPart(cur(), part.id, { lines, explanation });
@@ -391,7 +409,7 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
     }
   };
 
-  const needsSelf = part.kind === 'forklaring' && !aiAvailable() && !examMode;
+  const needsSelf = part.kind === 'forklaring' && (part.selfCheck || !aiAvailable()) && !examMode;
 
   return (
     <section className="card stack" aria-label="Ditt arbeid" onBlur={flushPatch}>
@@ -461,8 +479,8 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
       {!submitted ? (
         <div className="actionbar sticky">
           {part.math && !examMode ? (
-            <button className="btn" onClick={checkLine} title="Kontrollerer linjen du står i">
-              <Icon name="check" size={16} /> Sjekk dette steget
+            <button className="btn" onClick={checkLine} title={checks >= 2 ? 'Fra tredje kontroll teller det som hjelp' : 'Kontrollerer linjen du står i'}>
+              <Icon name="check" size={16} /> Sjekk dette steget{checks ? ` (${checks})` : ''}
             </button>
           ) : null}
           {!examMode ? (
@@ -479,8 +497,12 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
       ) : null}
       {selfOpen ? (
         <div className="card flat stack">
-          <strong>Sammenlikn med vurderingsrammen</strong>
-          <p className="small muted">Automatisk vurdering av forklaringer krever AI, som ikke er tilgjengelig her. Les sensorveiledningen eller modellsvaret under, og kryss av for det svaret ditt faktisk sier. Selvvurdering vises, men teller ikke som dokumentert mestring.</p>
+          <strong>{part.selfCheck ? 'Sammenlikn med løsningsforslaget' : 'Sammenlikn med vurderingsrammen'}</strong>
+          <p className="small muted">
+            {part.selfCheck
+              ? 'Se løsningsforslaget under og kryss av for det du faktisk fikk til. Dette er en egenkontroll: den hjelper deg å se hva du må øve mer på, men teller ikke som dokumentert mestring.'
+              : 'Automatisk vurdering av forklaringer krever AI, som ikke er tilgjengelig her. Les sensorveiledningen eller modellsvaret under, og kryss av for det svaret ditt faktisk sier. Selvvurdering vises, men teller ikke som dokumentert mestring.'}
+          </p>
           {part.modelAnswer || task.solutionRegions?.length ? (
             <details className="disclosure" open>
               <summary className="small">{task.templateId === 'original' ? 'Sensorveiledningen / løsningen' : 'Modellsvar'}</summary>
@@ -631,9 +653,11 @@ function FeedbackView({ att, task, part, a, onShowBoard }: { att: Attempt; task:
           >
             <Icon name="book" size={16} /> {showSolution ? 'Skjul' : 'Vis'} full forklaring
           </button>
-          <button className="btn small" onClick={onShowBoard}>
-            <Icon name="play" size={16} /> Vis meg
-          </button>
+          {boardWorthIt(task, part) ? (
+            <button className="btn small" onClick={onShowBoard}>
+              <Icon name="play" size={16} /> Vis meg på tavla
+            </button>
+          ) : null}
           <button
             className="btn small soft"
             disabled={making}
@@ -656,8 +680,8 @@ function FeedbackView({ att, task, part, a, onShowBoard }: { att: Attempt; task:
           >
             <Icon name="shuffle" size={16} /> {making ? 'Lager oppgave …' : task.templateId === 'original' || task.templateId === 'ai-eksamen' ? 'Lignende eksamensoppgave' : 'Prøv en ny variant selv'}
           </button>
-          {a.uncertain || ip?.basis === 'ai-vurdering' ? (
-            <button className="btn small ghost" onClick={() => correctAssessment(att.id, part.id, 'Studenten meldte at vurderingen var feil (avlesning eller AI-vurdering).')}>
+          {(a.uncertain || ip?.basis === 'ai-vurdering') && !(att.parts.find((x) => x.partId === part.id)?.reassessed ?? 0) ? (
+            <button className="btn small ghost" title="Trekker vurderingen tilbake så du kan rette og levere på nytt (én gang per deloppgave)" onClick={() => correctAssessment(att.id, part.id, 'Studenten meldte at vurderingen var feil (avlesning eller AI-vurdering).')}>
               Vurderingen er feil
             </button>
           ) : null}
@@ -741,9 +765,12 @@ function PhotoInput({ att, task, part, pa, examMode, onLines, readOnly }: { att:
   };
 
   const isDemoTask = task.id.startsWith('demo-lik-');
+  // Uten AI-bildelesing kan appen bare lagre bildet, ikke vurdere det. Da tilbyr vi det ikke.
+  const canRead = aiImagesAvailable() || isDemoTask;
+  if (!canRead && !pa.images.length) return null;
   return (
     <div className="stack sm">
-      {!readOnly ? (
+      {!readOnly && canRead ? (
         <div className="row">
           <input ref={camRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => e.target.files?.[0] && handle(e.target.files[0], e.target.files[0].name)} />
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => e.target.files?.[0] && handle(e.target.files[0], e.target.files[0].name)} />

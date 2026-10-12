@@ -12,6 +12,7 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
   const [mem, setMem] = useState(false);
   const [active, setActive] = useState<CalcKey | null>(null);
   const [mode, setMode] = useState<'idle' | 'demo' | 'selv'>('idle');
+  const [playing, setPlaying] = useState(false);
   const [step, setStep] = useState(0);
   const [pressed, setPressed] = useState<CalcKey[]>([]);
   const [solved, setSolved] = useState(false);
@@ -19,7 +20,13 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
   const timer = useRef<number | null>(null);
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
   if (!plan) return null;
+  const stop = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    setPlaying(false);
+  };
   const reset = () => {
+    stop();
     calc.current = new BasicCalc();
     setDisplay('0');
     setMem(false);
@@ -37,10 +44,12 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
   const demo = () => {
     reset();
     setMode('demo');
+    setPlaying(true);
     let i = 0;
     const tick = () => {
       if (i >= plan.keys.length) {
         timer.current = null;
+        setPlaying(false);
         return;
       }
       press(plan.keys[i]);
@@ -50,13 +59,15 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
     timer.current = window.setTimeout(tick, 300);
   };
   const userPress = (k: CalcKey) => {
-    if (mode === 'demo') return;
-    if (mode !== 'selv') {
+    if (playing) return;
+    // Etter «Vis meg» (eller før noe er trykket) starter et eget forsøk fra null.
+    const fresh = mode !== 'selv';
+    if (fresh) {
       reset();
       setMode('selv');
     }
     press(k);
-    const next = [...pressed, k];
+    const next = fresh ? [k] : [...pressed, k];
     setPressed(next);
     const val = Number(calc.current.display);
     if (!solved && (k === '=' || k === 'MRC' || k === '√') && Math.abs(val - plan.result) <= Math.max(1e-9, Math.abs(plan.result) * 1e-6)) {
@@ -96,8 +107,8 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
       </div>
       <div className="calc-side stack sm">
         <div className="row">
-          <button className="btn small primary" onClick={demo} disabled={mode === 'demo' && step < plan.keys.length && !!timer.current}>
-            <Icon name="play" size={14} /> Vis meg
+          <button className="btn small primary" onClick={demo} disabled={playing}>
+            <Icon name="play" size={14} /> {mode === 'demo' && !playing ? 'Vis igjen' : 'Vis meg'}
           </button>
           <button
             className="btn small"
@@ -119,7 +130,7 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
           {plan.groups.map((g, i) => {
             const start = plan.groups.slice(0, i).reduce((n, x) => n + x.keys.length, 0);
             const done = mode === 'demo' ? step >= start + g.keys.length : mode === 'selv' ? matched >= start + g.keys.length : false;
-            const now = mode === 'demo' && step > start && step < start + g.keys.length;
+            const now = mode === 'demo' && playing && step > start && step < start + g.keys.length;
             return (
               <li key={i} className={done ? 'done' : now ? 'now' : ''}>
                 <span className="keys mono">{keysText(g.keys)}</span>
@@ -129,6 +140,7 @@ export function CalcPad({ expression, onSolved, compact }: { expression: string;
           })}
         </ol>
         {mode === 'selv' && offTrack ? <p className="xs" style={{ color: 'var(--amber)' }}>Du har gått bort fra oppskriften. Trykk «Prøv selv» for å starte på nytt, eller fortsett hvis du vet hva du gjør.</p> : null}
+        {mode === 'demo' && !playing ? <p className="xs muted">Nå er det din tur: trykk «Prøv selv» eller begynn å taste.</p> : null}
         {solved ? <p className="small ok-text">Riktig tastet! Displayet viser {display}.</p> : null}
       </div>
     </div>

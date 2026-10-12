@@ -44,9 +44,10 @@ function originalOppgave(st: SubTask, doc: SourceDoc | undefined, skills: string
     id: parts.length ? 'b' : 'a',
     label: parts.length ? 'Sammenlikn' : 'a',
     prompt: parts.length
-      ? 'Sammenlikn fremgangsmåten din med løsningsforslaget, og kryss av for det du fikk til.'
-      : 'Løs oppgaven linje for linje her (eller på papir og ta bilde av det), og lever. Da vises løsningsforslaget, og du sammenlikner med det.',
+      ? 'Etter at du har levert sluttsvaret: se løsningsforslaget og kryss av for det du fikk til. Dette er en egenkontroll og teller ikke som dokumentert mestring.'
+      : 'Løs oppgaven linje for linje her (eller på papir), og lever. Da vises løsningsforslaget, og du krysser av for det du fikk til.',
     kind: 'forklaring',
+    selfCheck: true,
     skills,
     // Regneoppgave uten avlest sluttsvar: utregning linje for linje, vurdert mot løsningsforslaget.
     ...(parts.length ? {} : { math: elMath([]) }),
@@ -127,7 +128,9 @@ export function originalTask(st: SubTask): GeneratedTask | null {
         kind: 'beregning',
         skills,
         math: { symbols: [], defs: {}, param: 'x', unknown: 'x', solution: {}, answerSymbols: answers.map((_, i) => `s${i}`) },
-        targets: answers.map((a, i) => ({ symbol: answers.length === 1 ? 'x' : `s${i}`, label: a.label, value: a.value, percent: a.unit === '%', minDecimals: Rat.parse(a.value).isExactDecimal(2) ? 0 : 1, aliases: a.label.toLowerCase().split(/\s+/).filter((w) => w.length > 3) })),
+        // «Tilnærmet» (f.eks. reallønn ≈ lønnsvekst − prisvekst): både tilnærmingen og den eksakte
+        // formelen er riktige på eksamen, så svaret godtas innenfor et halvt prosentpoeng.
+        targets: answers.map((a, i) => ({ symbol: answers.length === 1 ? 'x' : `s${i}`, label: a.label.replace(/\s*\(tilnærmet\)/i, ''), value: a.value, percent: a.unit === '%', minDecimals: Rat.parse(a.value).isExactDecimal(2) ? 0 : 1, tolerance: /tilnærmet/i.test(a.label) ? '0.5' : undefined, aliases: a.label.toLowerCase().replace(/\(tilnærmet\)/, '').split(/\s+/).filter((w) => w.length > 3) })),
         solution: answers.map((a) => ({ tex: '', text: `${a.label}: ${a.display}`, why: 'Regnet eksakt fra tallene i oppgaveteksten.', kind: 'innsetting' as const })),
         hints: { small: 'Skriv mellomregningene linje for linje.', firstStep: familyShort(fam).example, stepExplanation: familyShort(fam).text, workedExample: { intro: '', steps: [] } },
         methodCheckpoints: [],

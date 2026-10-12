@@ -96,11 +96,14 @@ export class BasicCalc {
       } else if (!this.display.includes('.')) this.display += '.';
       this.hasEntry = true;
     } else if (k === '+' || k === '−' || k === '×' || k === '÷') {
-      if (this.op && this.acc !== null && this.hasEntry) this.show(this.apply(this.acc, this.op, this.value));
-      else if (this.entering) this.cur = Number(this.display);
-      this.acc = this.value;
-      this.op = k;
+      if (this.op && this.acc !== null && this.hasEntry) {
+        const b = this.value;
+        this.entering = false;
+        this.show(this.apply(this.acc, this.op, b));
+      } else if (this.entering) this.cur = Number(this.display);
       this.entering = false;
+      this.acc = this.cur;
+      this.op = k;
       this.hasEntry = false;
     } else if (k === '=') {
       this.finish();
@@ -162,14 +165,19 @@ export function parseExpr(src: string): Node {
     .replace(/[·*x]/g, '×')
     .replace(/[/:]/g, '÷')
     .replace(/[−–-]/g, '−')
-    .replace(/sqrt|rot/gi, '√');
+    .replace(/sqrt|rot/gi, '√')
+    .replace(/pi/gi, 'π');
   let i = 0;
   const peek = () => s[i];
   const num = (): Node => {
-    const m = /^\d+(?:[.,]\d+)?/.exec(s.slice(i));
+    if (peek() === 'π') {
+      i++;
+      return { t: 'num', v: Math.PI };
+    }
+    const m = /^\d+(?:[.,]\d+)?(?:[eE][−+]?\d+)?/.exec(s.slice(i));
     if (!m) throw new Error(`Ventet et tall ved «${s.slice(i, i + 6)}»`);
     i += m[0].length;
-    let v = Number(m[0].replace(',', '.'));
+    let v = Number(m[0].replace(',', '.').replace('−', '-'));
     if (peek() === '%') {
       i++;
       v = v / 100;
@@ -204,16 +212,33 @@ export function parseExpr(src: string): Node {
         continue;
       }
       i++;
+      let sign = 1;
+      if (peek() === '−') {
+        sign = -1;
+        i++;
+      }
+      const paren = peek() === '(';
+      if (paren) i++;
+      if (paren && peek() === '−') {
+        sign = -sign;
+        i++;
+      }
       const n = num();
+      if (paren) {
+        if (peek() !== ')') throw new Error('Mangler )');
+        i++;
+      }
       if (n.t !== 'num' || !Number.isInteger(n.v)) throw new Error('Bare hele eksponenter');
-      a = { t: 'pow', a, n: n.v };
+      a = { t: 'pow', a, n: sign * n.v };
     }
     return a;
   };
   const term = (): Node => {
     let a = factor();
-    while (peek() === '×' || peek() === '÷') {
-      const op = s[i++] as '×' | '÷';
+    // «2(3+4)», «2π» og «3√2» betyr gange.
+    while (peek() === '×' || peek() === '÷' || peek() === '(' || peek() === '√' || peek() === 'π') {
+      const op = peek() === '÷' ? '÷' : '×';
+      if (peek() === '×' || peek() === '÷') i++;
       a = { t: 'bin', op, a, b: factor() };
     }
     return a;
@@ -279,6 +304,7 @@ function atomKeys(n: Node): CalcKey[] | null {
 function expandPow(n: Node): Node {
   switch (n.t) {
     case 'pow': {
+      if (n.n < 0 && n.a.t === 'num') return { t: 'num', v: n.a.v ** n.n };
       if (n.n < 1 || n.n > 4) throw new Error('For stor eksponent for en enkel kalkulator');
       const a = expandPow(n.a);
       let r: Node = a;
@@ -369,7 +395,7 @@ export interface CalcPlan {
 }
 
 function sameValue(a: number, b: number) {
-  return Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-9);
+  return Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-7);
 }
 
 /**
@@ -405,9 +431,20 @@ function planNode(expression: string, node: Node): CalcPlan | null {
   // 1) Rett fram fra venstre mot høyre.
   const direct = ltr(node, null);
   if (direct) candidates.push({ groups: splitDirect([...direct, ...(direct.length > 1 ? (['='] as CalcKey[]) : [])]), mem: false });
-  // 2) Sum av ledd: hvert ledd regnes og legges i minnet (M+ / M−), så MRC.
   const ts = terms(node);
-  if (!direct && ts.length > 1) {
+  // 2) Bytt rekkefølge på leddene: det sammensatte leddet først, så de enkle tallene
+  //    (120 − 20 + 3·5 tastes som 3 × 5 + 120 − 20 =).
+  if (ts.length > 1) {
+    const parts = ts.map((t) => ({ t, atom: atomKeys(t.node), k: ltr(t.node, null) }));
+    const compound = parts.filter((p) => !p.atom);
+    if (compound.length === 1 && compound[0].t.sign > 0 && compound[0].k && parts.every((p) => p.k)) {
+      const keys: CalcKey[] = [...compound[0].k];
+      for (const p of parts) if (p !== compound[0]) keys.push(p.t.sign > 0 ? '+' : '−', ...p.atom!);
+      candidates.push({ groups: [{ keys: compound[0].k, note: 'Start med leddet som har gange eller dele, så kalkulatoren regner det først.' }, ...splitDirect([...keys.slice(compound[0].k.length), '=']).map((g, i) => ({ keys: g.keys, note: i === 0 ? 'Legg til og trekk fra de andre leddene.' : g.note }))], mem: false });
+    }
+  }
+  // 3) Sum av ledd: hvert ledd regnes og legges i minnet (M+ / M−), så MRC.
+  if (ts.length > 1) {
     const parts = ts.map((t) => ({ t, k: ltr(t.node, null) }));
     if (parts.every((p) => p.k)) {
       const groups: { keys: CalcKey[]; note: string }[] = [{ keys: ['MRC', 'MRC', 'C'], note: 'Tøm minnet først (MRC to ganger), og nullstill.' }];
@@ -416,25 +453,22 @@ function planNode(expression: string, node: Node): CalcPlan | null {
       candidates.push({ groups, mem: true });
     }
   }
-  // 3) Ett deluttrykk (f.eks. nevneren) regnes først og legges i minnet.
-  if (!direct && !candidates.length) {
-    for (const sub of subNodes(node)) {
-      if (sub === node || sub.t === 'num') continue;
-      const rest = ltr(node, sub);
-      if (!rest) continue;
-      // Deluttrykket rett inn i minnet, eller ledd for ledd (M+ / M−) når det er en sum.
-      const first = ltr(sub, null);
-      const subTerms = first ? null : terms(sub).map((t) => ({ t, k: ltr(t.node, null) }));
-      if (!first && !(subTerms && subTerms.length > 1 && subTerms.every((p) => p.k))) continue;
-      const memGroups: { keys: CalcKey[]; note: string }[] = first
-        ? [{ keys: [...first, 'M+'], note: 'Regn ut parentesen først og legg den i minnet.' }]
-        : subTerms!.map((p) => ({ keys: [...p.k!, p.t.sign > 0 ? 'M+' : 'M−'] as CalcKey[], note: 'Regn ut hvert ledd i parentesen og samle dem i minnet.' }));
-      candidates.push({
-        groups: [{ keys: ['MRC', 'MRC', 'C'], note: 'Tøm minnet først (MRC to ganger), og nullstill.' }, ...memGroups, { keys: [...rest, '='], note: 'Regn resten. MRC henter parentesen fra minnet.' }],
-        mem: true,
-      });
-      break;
-    }
+  // 4) Ett deluttrykk (f.eks. nevneren) regnes først og legges i minnet.
+  for (const sub of subNodes(node)) {
+    if (sub === node || sub.t === 'num') continue;
+    const rest = ltr(node, sub);
+    if (!rest) continue;
+    // Deluttrykket rett inn i minnet, eller ledd for ledd (M+ / M−) når det er en sum.
+    const first = ltr(sub, null);
+    const subTerms = first ? null : terms(sub).map((t) => ({ t, k: ltr(t.node, null) }));
+    if (!first && !(subTerms && subTerms.length > 1 && subTerms.every((p) => p.k))) continue;
+    const memGroups: { keys: CalcKey[]; note: string }[] = first
+      ? [{ keys: [...first, 'M+'], note: 'Regn ut parentesen først og legg den i minnet.' }]
+      : subTerms!.map((p) => ({ keys: [...p.k!, p.t.sign > 0 ? 'M+' : 'M−'] as CalcKey[], note: 'Regn ut hvert ledd i parentesen og samle dem i minnet.' }));
+    candidates.push({
+      groups: [{ keys: ['MRC', 'MRC', 'C'], note: 'Tøm minnet først (MRC to ganger), og nullstill.' }, ...memGroups, { keys: [...rest, '='], note: 'Regn resten. MRC henter parentesen fra minnet.' }],
+      mem: true,
+    });
   }
   for (const c of candidates) {
     const keys = c.groups.flatMap((g) => g.keys);
@@ -464,4 +498,48 @@ export function keysText(keys: CalcKey[]): string {
 export function noNum(v: number, max = 4): string {
   const r = Number(v.toFixed(max));
   return r.toLocaleString('nb-NO', { maximumFractionDigits: max }).replace(/ /g, ' ');
+}
+
+/**
+ * Når uttrykket er for sammensatt for én tastesekvens: regn det i biter og skriv
+ * ned mellomsvarene. Innerste deler først.
+ */
+export function paperSteps(expression: string): { text: string; value: number }[] | null {
+  let node: Node;
+  try {
+    node = parseExpr(expression);
+  } catch {
+    return null;
+  }
+  const steps: { text: string; value: number }[] = [];
+  const show = (n: Node): string => (n.t === 'num' ? noNum(n.v) : noNum(walk(n)));
+  const walk = (n: Node): number => {
+    switch (n.t) {
+      case 'num':
+        return n.v;
+      case 'neg':
+        return -walk(n.a);
+      case 'sqrt': {
+        const inner = show(n.a);
+        const v = Math.sqrt(evalExpr(n.a));
+        steps.push({ text: `√${inner} = ${noNum(v)}`, value: v });
+        return v;
+      }
+      case 'pow': {
+        const base = show(n.a);
+        const v = evalExpr(n);
+        steps.push({ text: `${base}${n.n === 2 ? '²' : `^${n.n}`} = ${noNum(v)}`, value: v });
+        return v;
+      }
+      case 'bin': {
+        const a = show(n.a);
+        const b = show(n.b);
+        const v = evalExpr(n);
+        steps.push({ text: `${a} ${n.op === '÷' ? '÷' : n.op} ${b} = ${noNum(v)}`, value: v });
+        return v;
+      }
+    }
+  };
+  walk(node);
+  return steps.length ? steps.slice(0, 8) : null;
 }

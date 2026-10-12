@@ -35,10 +35,13 @@ test('parser tåler norsk skrivemåte', () => {
 });
 
 test('tvetydige tall avklares i stedet for å tolkes i stillhet', () => {
+  // «1 200» er den vanlige norske skrivemåten for 1200: leses som ett tall, men eleven kan velge «to tall».
   const r = parseLine('TC = 1 200 + 30Q');
-  assert.equal(r.unresolved.length, 1);
-  const r2 = parseLine('TC = 1 200 + 30Q', { resolutions: { 'space:1 200': 'thousands' } });
-  assert.equal(r2.unresolved.length, 0);
+  assert.equal(r.unresolved.length, 0);
+  assert.equal(r.ambiguities[0]?.chosen, 'thousands');
+  const r2 = parseLine('TC = 1 200 + 30Q', { resolutions: { 'space:1 200': 'split' } });
+  assert.equal(r2.ambiguities[0]?.chosen, 'split');
+  // Komma med tre sifre kan være desimal eller tusenskille: det må fortsatt avklares.
   const r3 = parseLine('x = 1,200');
   assert.equal(r3.unresolved.length, 1);
   const r4 = parseLine('x = 0,125');

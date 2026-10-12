@@ -181,7 +181,8 @@ export function buildTutorContext(task: GeneratedTask | undefined, part: GenPart
   }
   const used = att.help.filter((h) => !h.partId || h.partId === part.id);
   const maxLevel = used.reduce((m, h) => Math.max(m, h.level), 0);
-  lines.push(`Hjelp brukt i denne deloppgaven: ${used.length ? [...new Set(used.map((h) => h.type))].join(', ') : 'ingen'}. Høyeste hjelpenivå: ${maxLevel}. ${att.sawSolution || pa.submitted ? 'Studenten har sett løsningen eller levert; du kan diskutere svaret åpent.' : 'Ikke gi full løsning eller fasit med mindre studenten ber om det.'}`);
+  const sawThis = used.some((h) => h.level >= 5);
+  lines.push(`Hjelp brukt i denne deloppgaven: ${used.length ? [...new Set(used.map((h) => h.type))].join(', ') : 'ingen'}. Høyeste hjelpenivå: ${maxLevel}. ${sawThis || pa.submitted ? 'Studenten har sett løsningen på denne deloppgaven eller levert den; du kan diskutere svaret åpent.' : 'Deloppgaven er ikke levert: ikke gi sluttsvaret, fasiten eller riktig flervalgsalternativ, heller ikke på direkte spørsmål. Pek på knappen «Full løsning» og gi neste steg.'}`);
   const prevErr = history.filter((e) => e.outcome === 'ikke-riktig' && e.familyKbId === task?.familyKbId).slice(-5).map((e) => e.basis);
   if (prevErr.length) lines.push(`Tidligere feil i samme familie: ${prevErr.join(' | ')}`);
   return lines.join('\n');
@@ -190,4 +191,36 @@ export function buildTutorContext(task: GeneratedTask | undefined, part: GenPart
 export function nearestFormulaForSkill(skill: string) {
   const map: Record<string, string> = { 'lik.betingelse': 'f-lik', 'lik.losning': 'f-pstar', 'avg.modell': 'f-kile', 'avg.fordeling': 'f-andel', 'pst.endring': 'f-pst', 'pst.vekstfaktor': 'f-vekst', 'pst.baklengs': 'f-vekst', 'pst.poeng': 'f-poeng', 'kost.ac': 'f-ac', 'kost.mc': 'f-mc', 'kost.nullpunkt': 'f-null', 'kost.fast_var': 'f-tc' };
   return map[skill];
+}
+
+/**
+ * Kom sluttsvaret fram i lærerens svar før deloppgaven ble levert? Da registreres det som
+ * hjelp, så deloppgaven ikke teller som løst helt selv. Bare tall som ikke står i oppgaven,
+ * og som ikke er små heltall, telles (de dukker opp i vanlige forklaringer).
+ */
+export function revealsAnswer(reply: string, task: GeneratedTask, part: GenPart): boolean {
+  const norm = (t: string) => t.replace(/(\d)[\s\u00a0](?=\d{3}\b)/g, '$1').replace(/(\d),(\d)/g, '$1.$2');
+  const text = norm(reply);
+  const given = norm(`${task.intro ?? ''} ${task.title ?? ''} ${part.prompt}`);
+  for (const t of part.targets ?? []) {
+    let v: number;
+    try {
+      v = Rat.parse(t.value).toNumber();
+    } catch {
+      continue;
+    }
+    if (!Number.isFinite(v) || (Number.isInteger(v) && Math.abs(v) <= 12)) continue;
+    const forms = new Set([0, 1, 2, 3].map((d) => String(Number(v.toFixed(d)))));
+    for (const f of forms) {
+      const re = new RegExp(`(^|[^\\d.])${f.replace('.', '\\.').replace('-', '[-−]?')}(?![\\d])`);
+      if (re.test(text) && !re.test(given)) return true;
+    }
+  }
+  const right = part.choices?.find((c) => c.correct);
+  if (right) {
+    const L = right.id.toUpperCase();
+    const re = new RegExp(`(riktig(e)?\\s+(svar|alternativ)\\w*\\s+(er|blir)\\s*\\(?${L}\\b)|((svar|alternativ)\\s*\\(?${L}\\)?\\s+er\\s+(det\\s+)?riktig)`, 'i');
+    if (re.test(reply)) return true;
+  }
+  return false;
 }

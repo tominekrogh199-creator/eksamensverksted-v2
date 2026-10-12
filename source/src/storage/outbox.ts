@@ -17,12 +17,21 @@ export interface OutboxEntry {
 }
 
 let dbp: Promise<IDBDatabase | null> | null = null;
+// Én utboks per bruker: på en delt nettleser skal ikke A sine ulagrede endringer sendes inn på B sin konto.
+let scope = 'ukjent';
+
+export function setOutboxScope(uid: string | null) {
+  const next = uid ? uid.replace(/[^\w-]/g, '').slice(0, 64) : 'lokal';
+  if (next === scope) return;
+  scope = next;
+  dbp = null;
+}
 
 function open(): Promise<IDBDatabase | null> {
   if (dbp) return dbp;
   dbp = new Promise((resolve) => {
     try {
-      const req = indexedDB.open('eksamensverksted-utboks', 1);
+      const req = indexedDB.open(`eksamensverksted-utboks-${scope}`, 1);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains('w')) db.createObjectStore('w', { keyPath: 'key' });

@@ -7,20 +7,42 @@ import { RichText, Tex } from './Math';
 
 export const PART_COLORS = ['#2f74d0', '#e0620d', '#2b9348', '#c2255c', '#7048e8', '#0b7f8c'];
 
-export function LessonText({ text, className }: { text: string; className?: string }) {
-  const parts = useMemo(() => {
-    const out: { hl: number; s: string }[] = [];
-    const re = /\{\{([1-4]):([^}]*)\}\}/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text))) {
-      if (m.index > last) out.push({ hl: 0, s: text.slice(last, m.index) });
-      out.push({ hl: Number(m[1]), s: m[2] });
-      last = m.index + m[0].length;
+/** Deler teksten i fargemarkeringer. Tåler klammer inni ($\\frac{a}{b}$ i en markering). */
+export function splitMarks(text: string): { hl: number; s: string }[] {
+  const out: { hl: number; s: string }[] = [];
+  let i = 0;
+  let plain = '';
+  while (i < text.length) {
+    const m = /^\{\{([1-4]):/.exec(text.slice(i, i + 5));
+    if (m) {
+      let depth = 0;
+      let j = i + 5;
+      for (; j < text.length; j++) {
+        if (text[j] === '{') depth++;
+        else if (text[j] === '}') {
+          if (depth === 0 && text[j + 1] === '}') break;
+          depth = Math.max(0, depth - 1);
+        }
+      }
+      if (j < text.length) {
+        if (plain) out.push({ hl: 0, s: plain });
+        plain = '';
+        out.push({ hl: Number(m[1]), s: text.slice(i + 5, j) });
+        i = j + 2;
+        continue;
+      }
     }
-    if (last < text.length) out.push({ hl: 0, s: text.slice(last) });
-    return out;
-  }, [text]);
+    plain += text[i++];
+  }
+  if (plain) out.push({ hl: 0, s: plain });
+  return out;
+}
+
+/** Teksten uten fargekoder (til opplesning og korte sammendrag). */
+export const plainMarks = (text: string) => splitMarks(text).map((p) => p.s).join('');
+
+export function LessonText({ text, className }: { text: string; className?: string }) {
+  const parts = useMemo(() => splitMarks(text), [text]);
   return (
     <span className={className}>
       {parts.map((p, i) => (p.hl ? <mark key={i} className={`lx lx-${p.hl}`}><RichText text={p.s} /></mark> : <RichText key={i} text={p.s} />))}

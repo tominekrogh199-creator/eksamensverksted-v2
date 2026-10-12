@@ -24,14 +24,13 @@ export function MapScreen() {
   const evidence = useStore((s) => s.evidence());
   const sessions = useStore((s) => s.sessions());
   const pagesAll = useStore((s) => s.list<import('../../domain/types').PageRec>('page', s.ui.activeCourseId));
-  const [tab, setTab] = useState<Tab>((route.name === 'kart' && route.tab) || 'familier');
+  const [tab, setTab] = useState<Tab>((route.name === 'kart' && route.tab !== 'prioritet' && route.tab) || 'familier');
   const [konte, setKonte] = useState(true);
   const [sel, setSel] = useState<SubTask | null>(null);
   const [famSel, setFamSel] = useState<FamilyRow | null>(null);
   const model = useMemo(() => buildComparison(docs, subs, fams, { includeKonte: konte }), [docs, subs, fams, konte]);
   const outcomesDoc = docs.find((d) => d.meta.docType === 'fagbeskrivelse' && d.status !== 'duplikat');
   const outcomes = useMemo(() => (outcomesDoc ? extractOutcomes(outcomesDoc, pagesAll) : []), [outcomesDoc, pagesAll]);
-  const pr = useMemo(() => familyPriorities({ docs, subtasks: subs, families: fams, evidence, sessions, outcomeFamilies: outcomes.flatMap((o) => o.kbIds) }), [docs, subs, fams, evidence, sessions, outcomes]);
   const anyDemo = docs.some((d) => d.demo);
   return (
     <div className="page">
@@ -39,7 +38,7 @@ export function MapScreen() {
         <div className="stack sm">
           <span className="eyebrow">Eksamenskart {anyDemo ? <DemoBadge small /> : null}</span>
           <h1>Hva går igjen, og hva varierer?</h1>
-          <p className="muted">Hver celle åpner kilden. Tallene er historisk forekomst i settene dine, ikke sannsynligheten for neste eksamen.</p>
+          <p className="muted">Hver celle åpner kilden. Tallene er historisk forekomst i settene dine, ikke sannsynligheten for neste eksamen. Hva du bør øve på, står i eksamensplanen på Hjem.</p>
         </div>
       </div>
       <Tabs<Tab>
@@ -49,8 +48,8 @@ export function MapScreen() {
         items={[
           { id: 'familier', label: 'Oppgavefamilier' },
           { id: 'nummer', label: 'Samme oppgavenummer' },
-          { id: 'prioritet', label: 'Hva bør jeg øve på?' },
-          { id: 'pensum', label: 'Læringsmål' },
+          // Læringsmål bare når en emnebeskrivelse er lastet opp; «hva bør jeg øve på» står i eksamensplanen på Hjem.
+          ...(outcomesDoc ? [{ id: 'pensum' as Tab, label: 'Læringsmål' }] : []),
         ]}
       />
       <SetSummary model={model} konte={konte} setKonte={setKonte} />
@@ -62,8 +61,6 @@ export function MapScreen() {
         <FamilyMatrix model={model} onCell={setSel} onRow={setFamSel} />
       ) : tab === 'nummer' ? (
         <PositionView model={model} onCell={setSel} />
-      ) : tab === 'prioritet' ? (
-        <Priorities pr={pr} />
       ) : (
         <Outcomes outcomes={outcomes} subs={subs} hasDoc={!!outcomesDoc} />
       )}

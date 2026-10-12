@@ -43,7 +43,7 @@ export const DEFAULT_SYMBOLS = [
   'Qd', 'Qs', 'TC', 'AC', 'MC', 'VC', 'FC', 'TR', 'MR', 'TVC', 'AVC', 'ATC', 'Pk', 'Pp', 'V0', 'V1', 'Q0', 'P0', 'Q1', 'P1', 'TI',
 ];
 const FUNCS = ['sqrt', 'ln', 'log', 'exp', 'rot'];
-const UNITS = ['kr', 'nok', 'kroner', 'stk', 'enheter', 'enhet', 'mill', 'millioner', 'prosent', 'prosentpoeng', 'pp', 'mrd', 'tusen', 'per', 'år', 'timer', 'time', 'kg', 'liter'];
+const UNITS = ['kr', 'nok', 'kroner', 'øre', 'stk', 'stykk', 'enheter', 'enhet', 'mill', 'millioner', 'prosent', 'prosentpoeng', 'prosentenheter', 'pp', 'mrd', 'tusen', 'per', 'pr', 'år', 'året', 'timer', 'time', 'timen', 'døgn', 'dag', 'dagen', 'dager', 'uke', 'uka', 'uker', 'måned', 'måneden', 'måneder', 'mnd', 'person', 'personer', 'kg', 'liter'];
 const CONNECTORS = ['og', 'så', 'gir', 'dvs', 'altså', 'da', 'blir', 'eller'];
 // Symboler som kan tas som funksjonsverdi: Qd(20) betyr Qd evaluert i P = 20.
 export const FUNCTION_SYMBOLS = ['Qd', 'Qs', 'TC', 'AC', 'MC', 'TR', 'VC'];
@@ -64,6 +64,8 @@ type Tok =
 
 function normalizeInput(s: string): string {
   return s
+    .replace(/(\d),[-−–—](?!\d)/g, '$1') // «1580,-» er kroner uten øre
+    .replace(/(^|[\s(=:])(?:ca\.?|cirka|omtrent|rundt|tilnærmet)\s+(?=[-−–]?\d)/gi, '$1≈ ')
     .replace(/[−–—]/g, '-')
     .replace(/[·×⋅∙]/g, '*')
     .replace(/÷/g, '/')
@@ -177,10 +179,11 @@ function tokenize(input: string, symbols: string[], resolutions: Record<string, 
           ],
         };
         ambiguities.push(a);
-        const choice = resolutions[id];
-        if (choice) a.chosen = choice;
+        // «1 580» er den vanlige norske skrivemåten for 1580, så det er standardvalget.
+        // Eleven kan fortsatt svare «to tall» ved linjen, men vurderingen venter ikke på det.
+        const choice = resolutions[id] ?? 'thousands';
+        a.chosen = choice;
         if (choice !== 'split') {
-          // Standard for visning er tusenskille, men linjen regnes som uavklart til eleven har svart.
           value = Rat.parseDecimal(groups);
           i = j;
           toks.push({ k: 'num', raw: rawAll, v: value, amb: a });
