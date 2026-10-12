@@ -11,7 +11,7 @@ To prinsipper styrer alt:
 
 ```bash
 npm install
-npm test            # 35 enhets- og integrasjonstester (matematikkmotor, generator, pipeline, eksamensformat, tekniske oppgavesett og OCR-opprydding)
+npm test            # 61 enhets- og integrasjonstester (matematikkmotor, generator, pipeline, eksamensformat, tekniske oppgavesett og OCR-opprydding)
 npm run typecheck
 npm run build       # dist/index.html (artefakt), dist/local.html (frittstående), app.js, vendor/, demo/
 npm run demo        # lager DEMO-filene på nytt (Python, reportlab, python-docx, Pillow)

@@ -83,6 +83,7 @@ const ROWS: { area: string; items: [string, S, string][] }[] = [
       ['Kalkulatoren på eksamen', 'fungerer', 'En simulert vanlig kalkulator (+ − × ÷ √ % = M+ M− MRC, regner fra venstre mot høyre). Appen lager tastetrykkene selv fra regneuttrykket og kjører dem i simulatoren før de vises. «Vis meg» trykker tastene én og én; «Prøv selv» viser neste tast ved behov.'],
       ['Tekst eller visuelt, fokusmodus og interesser', 'fungerer', 'Fargekodede formler og nøkkelord, steg som vises ett om gangen, kort du snur, figurer med glidebrytere. Fokusmodus gir ett kort om gangen og pustepause hvert femte kort. Interessene i «Om meg» brukes i eksemplene når en leksjon lages med AI.'],
       ['Tutorfigur', 'fungerer', 'Ugle, rev, katt eller robot med eget navn. Egne figurer, ikke kjente maskoter.'],
+      ['Prøv selv i regnetemaer', 'fungerer', 'Etter gjennomgått eksempel kommer en lignende regneoppgave du svarer på selv, og quizen fylles opp med regneoppgaver. Typiske feil (glemte faste kostnader, delte ikke på mengden) får egen forklaring.'],
       ['Valgfri quiz, poeng, dager på rad og dagsmål', 'fungerer', 'Poengene er motivasjon og påvirker ikke mestringsbildet.'],
       ['Konkurranse per kapittel mot egen rekord', 'fungerer', '8 spørsmål på tid med fartsbonus, og et «spøkelse» som viser rekordløpet. Spørsmålene kommer fra quizene, de ekte flervalgsspørsmålene dine og kontrollerte maloppgaver.'],
     ],
@@ -126,7 +127,8 @@ const ROWS: { area: string; items: [string, S, string][] }[] = [
     items: [
       ['Privat lagring per bruker med synk', 'fungerer', 'Plattformens database, privat område per bruker. Endringer legges først i en utboks i nettleseren og sendes med høyst tre samtidige skrivinger; avviser databasen dem (travel, nett borte), prøves de på nytt, og ved neste åpning sendes det som ikke rakk å bli lagret. Statusen øverst viser Lagret / Lagrer / Venter på nett / Ikke lagret. Endringer fra andre enheter hentes jevnlig. Testet med en simulert database som avviser alle skrivinger.'],
       ['Originalfiler i skyen', 'fungerer', 'Valgfritt per fag, av som standard. Utsnitt forstørres ved klikk.'],
-      ['Eksport og sletting', 'fungerer', ''],
+      ['Eksport og sletting', 'fungerer', '«Slett historikk» nullstiller fremgangen i faget (også på andre enheter); totalpoeng og dager på rad beholdes. Sletter du en ny dokumentversjon, blir forrige versjon gjeldende igjen.'],
+      ['Opprydding og opplasting av lokale data', 'fungerer', 'Knapper i Innstillinger: rydd opp i lagringen, og last opp data som bare lå i nettleseren til kontoen.'],
       ['Instrukser i opplastede filer og svar behandles som data', 'fungerer', 'Tekst som ligner instrukser («ignorer systemet …») flagges synlig i arkivet og endrer ingenting. I AI-kall merkes data som data, svar valideres mot skjema, og AI får ingen verktøy. Vurdering av regneoppgaver gjøres av matematikkmotoren, ikke av AI. Demo: emnebeskrivelsen har en slik testlinje.'],
       ['API-nøkler', 'fungerer', 'Ingen nøkler i klienten. Claude nås via plattformens innebygde tilgang på brukerens konto.'],
     ],

@@ -1178,6 +1178,15 @@ export async function deleteDocument(docId: string) {
   for (const s of store.subtasks(d.courseId).filter((x) => x.docId === docId)) store.remove(s);
   if (d.status !== 'duplikat' && store.platform) await blobs.remove(store.platform, blobRef(d));
   store.remove(d);
+  // Slettes en ny versjon, blir den forrige versjonen gjeldende igjen (ellers ville settet forsvinne helt).
+  const prev = d.previousVersionId ? store.get<SourceDoc>('doc', d.previousVersionId) : undefined;
+  if (prev && prev.supersededBy === d.id) {
+    store.upsert({ ...prev, supersededBy: undefined, status: 'behandles' });
+    // Sidene finnes fortsatt (med mindre de er ryddet bort): da holder det å dele opp og analysere på nytt.
+    const hasPages = store.pages(prev.id).some((p) => p.docVersion === prev.version);
+    rerunFrom(prev.id, hasPages ? 'segmentering' : 'sidelesing');
+    store.toast(`Forrige versjon av «${prev.fileName}» er gjeldende igjen.`, 'info');
+  }
   relinkGuides(d.courseId);
   void refreshFamilies(d.courseId);
 }
