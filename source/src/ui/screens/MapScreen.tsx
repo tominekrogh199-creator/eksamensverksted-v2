@@ -38,7 +38,7 @@ export function MapScreen() {
         <div className="stack sm">
           <span className="eyebrow">Eksamenskart {anyDemo ? <DemoBadge small /> : null}</span>
           <h1>Hva går igjen, og hva varierer?</h1>
-          <p className="muted">Hver celle åpner kilden. Tallene er historisk forekomst i settene dine, ikke sannsynligheten for neste eksamen. Hva du bør øve på, står i eksamensplanen på Hjem.</p>
+          <p className="muted">Hver celle åpner kilden. Tallene er historisk forekomst i settene dine, ikke sannsynligheten for neste eksamen. Hva du bør øve på, står i Eksamensplan.</p>
         </div>
       </div>
       <Tabs<Tab>
@@ -48,7 +48,7 @@ export function MapScreen() {
         items={[
           { id: 'familier', label: 'Oppgavefamilier' },
           { id: 'nummer', label: 'Samme oppgavenummer' },
-          // Læringsmål bare når en emnebeskrivelse er lastet opp; «hva bør jeg øve på» står i eksamensplanen på Hjem.
+          // Læringsmål bare når en emnebeskrivelse er lastet opp; «hva bør jeg øve på» står i Eksamensplan.
           ...(outcomesDoc ? [{ id: 'pensum' as Tab, label: 'Læringsmål' }] : []),
         ]}
       />

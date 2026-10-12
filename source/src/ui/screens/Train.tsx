@@ -135,7 +135,7 @@ function OriginalsCard() {
         ) : null}
         {pool.oppgave.length ? (
           <button className={pool.flervalg.length ? 'btn' : 'btn primary'} onClick={() => startOriginalsAndGo({ format: 'oppgave', count: 3, reason: 'Tre oppgaver fra eksamenssettene. Løs dem, skriv sluttsvaret, og sammenlikn med løsningsforslaget.' })}>
-            <Icon name="pencil" size={16} /> 3 eksamensoppgaver
+            <Icon name="pencil" size={16} /> Start med 3 oppgaver
           </button>
         ) : null}
         {pool.samling.length ? (
@@ -346,13 +346,30 @@ function TrainSetup({ setup }: { setup?: { families?: string[]; level?: number |
         </div>
         <div className="row">
           <button className="btn" onClick={() => store.navigate({ name: 'formel' })}>
-            <Icon name="book" size={16} /> Forstå formelen
+            <Icon name="book" size={16} /> Formler
           </button>
           <button className="btn" onClick={() => store.navigate({ name: 'eksamen' })}>
-            <Icon name="clock" size={16} /> Eksamensmodus
+            <Icon name="clock" size={16} /> Prøveeksamen
           </button>
         </div>
       </div>
+      {/* Uferdig arbeid først: det er det letteste stedet å begynne igjen. */}
+      {atts.length ? (
+        <section className="stack sm">
+          <h3>Fortsett der du slapp</h3>
+          {atts.slice(-5).reverse().map((a) => {
+            const t = store.get<GeneratedTask>('gen', a.taskRef.id);
+            return (
+              <button key={a.id} className="card tight row between" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => store.navigate({ name: 'tren', attemptId: a.id, sessionId: a.sessionId })}>
+                <span>
+                  <strong>{t?.title ?? 'Oppgave'}</strong> <span className="small muted">· startet {relTime(a.startedAt)}</span>
+                </span>
+                <Pill tone="accent">Fortsett</Pill>
+              </button>
+            );
+          })}
+        </section>
+      ) : null}
       <ExamLikeCard />
       <OriginalsCard />
       <h3 style={{ marginTop: 'var(--s2)' }}>Bygg opp ferdighetene</h3>
@@ -415,8 +432,10 @@ function TrainSetup({ setup }: { setup?: { families?: string[]; level?: number |
           </div>
         </div>
       ) : null}
-      <section className="card stack">
-        <h3>Sett sammen din egen økt</h3>
+      <details className="card stack disclosure">
+        <summary>
+          <strong>Sett sammen din egen økt</strong> <span className="small muted">(velg temaer, nivå og antall selv)</span>
+        </summary>
         <div className="stack sm">
           <span className="label">Oppgavefamilier</span>
           <div className="row">
@@ -467,23 +486,7 @@ function TrainSetup({ setup }: { setup?: { families?: string[]; level?: number |
           </button>
           <span className="xs muted">Oppgavene lages fra kontrollerte maler, og fasit regnes ut med kode. Nesten like oppgaver i samme økt unngås.</span>
         </div>
-      </section>
-      {atts.length ? (
-        <section className="stack sm">
-          <h3>Uferdige forsøk</h3>
-          {atts.slice(-5).reverse().map((a) => {
-            const t = store.get<GeneratedTask>('gen', a.taskRef.id);
-            return (
-              <button key={a.id} className="card tight row between" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => store.navigate({ name: 'tren', attemptId: a.id, sessionId: a.sessionId })}>
-                <span>
-                  <strong>{t?.title ?? 'Oppgave'}</strong> <span className="small muted">· startet {relTime(a.startedAt)}</span>
-                </span>
-                <Pill tone="accent">Fortsett</Pill>
-              </button>
-            );
-          })}
-        </section>
-      ) : null}
+      </details>
     </div>
   );
 }

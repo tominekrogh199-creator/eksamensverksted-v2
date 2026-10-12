@@ -167,6 +167,12 @@ function DocCard({ doc, open, toggle }: { doc: SourceDoc; open: boolean; toggle:
   const readingDone = doc.status !== 'behandles' && doc.stages.bildelesing.status !== 'pågår' && doc.stages.sidelesing.status !== 'pågår';
   const needsText = readingDone ? pages.filter((p) => p.status === 'trenger-ai-lesing' || p.status === 'uleselig') : [];
   const replaceRef = useRef<HTMLInputElement>(null);
+  // Forslag til hvilket sett en veiledning hører til: høyest koblingspoeng, ellers samme settnavn eller samme år, termin og type.
+  const others = exams.filter((e) => e.id !== doc.id);
+  const best = [...(doc.linkCandidates ?? [])].sort((a, b) => b.score - a.score)[0];
+  const sameLabel = others.filter((e) => doc.meta.setLabel && e.meta.setLabel === doc.meta.setLabel);
+  const sameTerm = others.filter((e) => doc.meta.year && e.meta.year === doc.meta.year && e.meta.term === doc.meta.term && e.meta.examType === doc.meta.examType);
+  const suggested = best && others.some((e) => e.id === best.examDocId) ? best.examDocId : sameLabel.length === 1 ? sameLabel[0].id : sameTerm.length === 1 ? sameTerm[0].id : undefined;
   return (
     <article className="card stack" style={doc.status === 'duplikat' ? { opacity: 0.8 } : undefined}>
       <div className="doc-row">
@@ -291,16 +297,19 @@ function DocCard({ doc, open, toggle }: { doc: SourceDoc; open: boolean; toggle:
           </div>
         ) : doc.stages.segmentering.status === 'ferdig' && !doc.selfContained && exams.some((e) => e.id !== doc.id) ? (
           <Notice tone="amber" icon="link">
-            <span className="small">Hvilket eksamenssett gjelder veiledningen? Vi kobler ikke bare på filnavn.</span>
+            <span className="small">Hvilket eksamenssett gjelder veiledningen? Vi kobler ikke bare på filnavn{suggested ? ', men det mest sannsynlige er markert' : ''}.</span>
             <div className="row">
-              {exams.filter((e) => e.id !== doc.id).map((e) => {
-                const c = doc.linkCandidates?.find((x) => x.examDocId === e.id);
-                return (
-                  <button key={e.id} className="btn small" onClick={() => confirmGuideLink(doc.id, e.id)} title={c?.basis.join(' ')}>
-                    {e.meta.setLabel ?? e.fileName} {c ? <span className="faint">({c.score})</span> : null}
-                  </button>
-                );
-              })}
+              {exams
+                .filter((e) => e.id !== doc.id)
+                .sort((a, b) => Number(b.id === suggested) - Number(a.id === suggested))
+                .map((e) => {
+                  const c = doc.linkCandidates?.find((x) => x.examDocId === e.id);
+                  return (
+                    <button key={e.id} className={`btn small${e.id === suggested ? ' primary' : ''}`} onClick={() => confirmGuideLink(doc.id, e.id)} title={c?.basis.join(' ')}>
+                      {e.meta.setLabel ?? e.fileName} {e.id === suggested ? '(forslag)' : c ? <span className="faint">({c.score})</span> : null}
+                    </button>
+                  );
+                })}
             </div>
           </Notice>
         ) : null
