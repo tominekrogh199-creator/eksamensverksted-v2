@@ -8,7 +8,7 @@ import { newId, nowIso } from '../../domain/types';
 import { store, useStore } from '../../state/store';
 import { patchPart, recordHelp, submitPart, newVariant, startAttempt, correctAssessment, emptyPartAttempt } from '../../learning/actions';
 import { checkWorkBest } from '../../math/check';
-import { effectiveLines } from '../../learning/assess';
+import { effectiveLines, isReadOffPart } from '../../learning/assess';
 import { LinesEditor, LineStatusView } from '../components/LinesEditor';
 import { eng } from '../../families/el-common';
 import { TutorPanel, addChat, StepList } from '../components/TutorPanel';
@@ -557,10 +557,12 @@ function FeedbackView({ att, task, part, a, onShowBoard }: { att: Attempt; task:
   const [making, setMaking] = useState(false);
   const sawSol = att.help.some((h) => h.partId === part.id && h.level >= 5);
   const ip = a.interpretation;
+  // Flervalg, rene forklaringer og avlesninger har ingen utregning å vurdere.
+  const noMethodCell = (ip && !a.answer.items.length) || part.kind === 'flervalg' || (isReadOffPart(part) && !a.method.firstDeviation);
   return (
     <div className="feedback" aria-live="polite">
-      <div className="fb-head" style={(ip && !a.answer.items.length) || part.kind === 'flervalg' ? { gridTemplateColumns: '1fr' } : undefined}>
-        {(ip && !a.answer.items.length) || part.kind === 'flervalg' ? null : (
+      <div className="fb-head" style={noMethodCell ? { gridTemplateColumns: '1fr' } : undefined}>
+        {noMethodCell ? null : (
           <div className="fb-cell">
             <span className="eyebrow">Metode</span>
             <span className={`verdict ${verdictTone(a.method.verdict)}`}>{part.math?.units === 'si' && a.method.verdict === 'riktig' ? 'Regningen stemmer' : METHOD_TEXT[a.method.verdict] ?? a.method.verdict}</span>

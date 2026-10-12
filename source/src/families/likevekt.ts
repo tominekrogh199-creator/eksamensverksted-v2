@@ -560,6 +560,7 @@ const tplGrafLes: TemplateDef = {
         workedExample: { intro: '', steps: [] },
       },
       methodCheckpoints: [],
+      readOff: true,
     };
     const partB = calcPart('b', `Uttrykkene bak figuren er Qd = ${linExpr(a, b.neg(), 'P')} og Qs = ${linExpr(c, d, 'P')}. Kontroller avlesningen ved regning.`, a, b, c, d, ['lik.kontroll']);
     return {

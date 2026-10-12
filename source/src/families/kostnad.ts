@@ -63,6 +63,7 @@ const tplGrunn: TemplateDef = {
         solution: [step(`\\mathit{FC} = ${texNum(F)},\\quad \\text{variabel kostnad per enhet} = ${texNum(c)}`, 'Les av uttrykket', 'Konstantleddet påløper uansett hvor mye som produseres (faste kostnader). Tallet foran Q er kostnaden ved hver enhet.', 'definisjon')],
         hints: { small: 'Hvilken del av uttrykket endrer seg når Q endrer seg?', firstStep: `Konstantleddet er ${no(F)}.`, stepExplanation: 'Faste kostnader avhenger ikke av Q. Variable kostnader øker med Q.', workedExample: { intro: 'TC = 300 + 5Q', steps: [step('FC = 300,\\ c = 5', '', '', 'definisjon')] } },
         methodCheckpoints: [],
+        readOff: true,
       },
       {
         id: 'b',

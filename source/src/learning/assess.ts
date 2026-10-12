@@ -157,6 +157,17 @@ const DEV_TEXT: Record<string, string> = {
   'feil-oppsett': 'et oppsett som ikke stemmer med oppgaven',
 };
 
+/**
+ * Deloppgaver der svaret bare leses av uttrykket eller figuren («Les av likevekten»,
+ * «Hvor store er de faste kostnadene?»). Der er et rent svar hele metoden.
+ * Eldre lagrede oppgaver mangler flagget, så vi kjenner dem også igjen på «Les av».
+ */
+export function isReadOffPart(part: GenPart): boolean {
+  if (part.readOff !== undefined) return part.readOff;
+  if (part.kind !== 'beregning' || part.solution.length > 1) return false;
+  return /\bles av\b/i.test(part.prompt) || /^\s*les av\b/i.test(part.solution[0]?.text ?? '');
+}
+
 export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedTask): PartAssessment {
   const el = effectiveLines(pa);
   const base: PartAssessment = {
@@ -175,7 +186,7 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
   if (unresolved.length) {
     return { ...base, uncertain: true, method: { verdict: 'uavklart', checkpoints: [] }, answer: { verdict: 'uavklart', items: [] }, readingIssues: unresolved.map((c) => `Linje ${c.index + 1}: ${c.ambiguities.filter((a) => !a.chosen).map((a) => a.question).join(' ')}`), feedback: 'Før vi vurderer: noen tall kan leses på to måter. Svar på spørsmålene ved linjene, så kontrollerer vi.' };
   }
-  const dev = findFirstDeviation(checks, cc);
+  const rawDev = findFirstDeviation(checks, cc);
   const answers = checkAnswers(checks, part.targets, cc);
   const cps = part.methodCheckpoints.map((c) => ({ id: c.id, label: c.label, skill: c.skill, shown: detectCheckpoint(c.detect, checks, cc) }));
   const mathLines = checks.filter((c) => c.statements.some((s) => s.status !== 'tekst')).length;
@@ -185,6 +196,10 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
   // «x = 5», «konsum = 1580» og «Svar: 1580» er bare svar. «konsum = 230·6 + 200» viser oppsettet.
   const plainNumber = (n: (typeof checks)[number]['statements'][number]['statement']['sides'][number]): boolean => n.t === 'num' || ((n.t === 'neg' || n.t === 'pct') && plainNumber(n.a));
   const answerOnly = mathLines > 0 && checks.every((c) => c.statements.every((s) => s.status === 'tekst' || (s.statement.sides.length < 2 && (!s.statement.sides[0] || plainNumber(s.statement.sides[0]))) || (s.statement.sides.length === 2 && s.statement.sides[0].t === 'var' && plainNumber(s.statement.sides[1]))));
+  // Avlesning («FC = 300», «P = 40»): et rent svar er hele metoden. Et feil tall er da
+  // en feil avlesning, ikke et feil oppsett, og vi ber ikke om mellomregning som ikke finnes.
+  const readOff = isReadOffPart(part) && mathLines > 0 && (answerOnly || !stepLines) && !rawDev?.needsReadingConfirmation;
+  const dev = readOff ? undefined : rawDev;
   let methodVerdict: PartAssessment['method']['verdict'];
   if (dev?.needsReadingConfirmation) methodVerdict = 'uavklart';
   else if (!mathLines || !stepLines) methodVerdict = 'ikke-vist';
@@ -198,6 +213,7 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
   const okN = answers.filter((a) => a.verdict === 'riktig' || a.verdict === 'riktig-avrundet').length;
   let answerVerdict: PartAssessment['answer']['verdict'] = okN === answers.length ? 'riktig' : okN > 0 ? 'delvis' : answers.every((a) => a.verdict === 'mangler') ? 'mangler' : 'feil';
   if (answers.some((a) => a.verdict === 'uavklart')) answerVerdict = 'uavklart';
+  if (readOff && answerVerdict === 'riktig') methodVerdict = 'riktig';
   const misconception = detectMisconception(task, part, answers);
   const readingIssues = [
     ...unreadable.map((c) => `Linje ${c.index + 1} kunne ikke leses som matematikk: ${c.error ?? ''}`),
@@ -215,6 +231,8 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
     const good = lastGood ? `Omformingen fram til «${lastGood}» stemmer. ` : '';
     const where = dev.lastGoodLine === dev.lineIndex ? `steget «${badText}» i linje ${dev.lineIndex + 1}` : `linje ${dev.lineIndex + 1}, «${badText}»`;
     fb.push(`${setup}${good}Første avvik er ${where}: ${DEV_TEXT[dev.kind] ?? 'en omforming som ikke stemmer'}. ${dev.detail}`);
+  } else if (readOff) {
+    // Ingen metodekommentar: svaret sier alt.
   } else if (methodVerdict === 'riktig') {
     const shown = cps.filter((c) => c.shown).map((c) => c.label.toLowerCase());
     if (answerVerdict !== 'feil') fb.push(part.math.units === 'si' ? 'Regningen i stegene dine henger sammen. Appen kontrollerer regningen, ikke om du har valgt riktig kobling eller metode – sammenlikn med løsningen.' : shown.length ? `Alle stegene stemmer. Du ${shown.slice(0, 3).join(', ')}.` : 'Alle stegene du skrev, stemmer.');
@@ -235,12 +253,13 @@ export function assessMathPart(part: GenPart, pa: PartAttempt, task?: GeneratedT
     // Tydelig beskjed når sluttsvaret er feil, også når stegene i seg selv henger sammen.
     const wrong = answers.filter((a) => a.verdict === 'feil').map((a) => (part.math!.units === 'si' ? shownValue(a) : `${a.target.label.toLowerCase()} = ${a.given ? (a.target.percent ? `${a.given.toNo(2)} %` : a.given.toNo(3)) : '…'}`));
     fb.push(`Sluttsvaret stemmer ikke (${wrong.join(', ')}).`);
-    if (methodVerdict === 'ikke-vist') fb.push('Skriv utregningen linje for linje, så viser appen nøyaktig hvor det går galt.');
+    if (readOff) fb.push(`Se en gang til på ${part.graph ? 'figuren' : 'uttrykket'}.${part.hints.small ? ` ${part.hints.small}` : ''}`);
+    else if (methodVerdict === 'ikke-vist') fb.push('Skriv utregningen linje for linje, så viser appen nøyaktig hvor det går galt.');
     else if (methodVerdict === 'riktig') fb.push('Regningen henger sammen, så feilen ligger trolig i oppsettet: sjekk hva oppgaven spør etter, og om du har brukt riktige tall og riktig sammenheng.');
   }
   if (answerVerdict === 'delvis') {
     const wrong = answers.filter((a) => a.verdict === 'feil').map((a) => a.target.label.toLowerCase());
-    if (wrong.length) fb.push(`Stemmer ikke ennå: ${wrong.join(', ')}.`);
+    if (wrong.length) fb.push(`Stemmer ikke ennå: ${wrong.join(', ')}.${readOff ? ` Se en gang til på ${part.graph ? 'figuren' : 'uttrykket'}.` : ''}`);
   }
   if (misconception) fb.push(misconception.detail);
   const note = answers.find((a) => a.note)?.note;

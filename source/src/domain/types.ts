@@ -343,6 +343,8 @@ export interface GenPart {
   modelAnswer?: string;
   /** Egenkontroll mot løsningsforslaget: alltid selvvurdering, teller aldri som mestring, og tas ikke med på prøver. */
   selfCheck?: boolean;
+  /** Svaret leses rett av uttrykket, tabellen eller figuren. Ingen mellomregning forventes, så «metoden er ikke vist» gjelder ikke. */
+  readOff?: boolean;
 }
 
 export type CheckpointDetect =
