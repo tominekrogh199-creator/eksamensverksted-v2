@@ -122,6 +122,19 @@ function detectMisconception(task: GeneratedTask | undefined, part: GenPart, ans
     }
     if (a.target.symbol === 'P' && sol.Q && g.eq(Rat.parse(sol.Q))) return { id: 'bytter-p-q', label: 'Byttet om pris og kvantum', detail: 'Tallet du oppga som pris, er likevektskvantumet.' };
     if (a.target.symbol === 'Q' && sol.P && g.eq(Rat.parse(sol.P))) return { id: 'bytter-p-q', label: 'Byttet om pris og kvantum', detail: 'Tallet du oppga som kvantum, er likevektsprisen.' };
+    // Kostnad: vanlige feil i gjennomsnittskostnad (AC = (F + cQ)/Q).
+    if (a.target.symbol === 'AC' && sol.FC && sol.MC && sol.Q) {
+      const F = Rat.parse(sol.FC);
+      const c = Rat.parse(sol.MC);
+      const Q = Rat.parse(sol.Q);
+      if (!Q.isZero()) {
+        if (g.eq(c)) return { id: 'glemmer-faste', label: 'Glemte de faste kostnadene', detail: `${c.toNo()} er bare den variable kostnaden per enhet. Gjennomsnittskostnaden er AC = (F + cQ)/Q: hele totalkostnaden, også de faste kostnadene, skal deles på Q.` };
+        if (g.eq(F.div(Q))) return { id: 'glemmer-variable', label: 'Glemte de variable kostnadene', detail: `${F.div(Q).toNo(2)} er bare de faste kostnadene per enhet (F/Q). Legg til den variable kostnaden per enhet: AC = F/Q + c.` };
+        if (g.eq(F.add(c.mul(Q)))) return { id: 'glemte-dele', label: 'Glemte å dele på Q', detail: `${g.toNo()} er totalkostnaden (TC). Gjennomsnittskostnaden er totalkostnaden delt på mengden: AC = TC/Q.` };
+        if (g.eq(F.div(Q).add(c.mul(Q)))) return { id: 'delte-bare-faste', label: 'Delte bare de faste kostnadene på Q', detail: 'Du delte F på Q, men ganget c med Q. Når hele TC deles på Q, blir cQ/Q = c. Så AC = F/Q + c.' };
+      }
+    }
+    if (a.target.symbol === 'MC' && sol.AC && sol.MC && g.eq(Rat.parse(sol.AC)) && !Rat.parse(sol.AC).eq(Rat.parse(sol.MC))) return { id: 'mc-ac', label: 'Blandet grensekostnad og gjennomsnittskostnad', detail: 'Det du oppga, er gjennomsnittskostnaden. Grensekostnaden er hva én enhet til koster, altså tallet foran Q.' };
     if (task?.templateId === 'pst-to-endringer' && task.params.p1 && task.params.p2 && g.eq(Rat.parse(task.params.p1).sub(Rat.parse(task.params.p2)))) return { id: 'legger-sammen', label: 'La sammen prosentene', detail: 'Den andre endringen regnes av en ny verdi, så prosentene kan ikke bare legges sammen.' };
     if (task?.templateId === 'pst-baklengs' && sol.V1 && task.params.pct) {
       const V1 = Rat.parse(sol.V1);

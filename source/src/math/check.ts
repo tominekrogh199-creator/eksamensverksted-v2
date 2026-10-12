@@ -374,7 +374,7 @@ export function findFirstDeviation(checks: LineCheck[], cc: CompiledContext): Fi
       if (sc.status === 'avvik') {
         const needsReadingConfirmation = lc.source === 'image' && lc.readingCertain === false;
         let kind: DeviationKind = 'feil-oppsett';
-        let detail = 'Første linje stemmer ikke med oppgavens opplysninger.';
+        let detail = 'Sjekk at du har brukt riktig formel og satt inn tallene fra oppgaven.';
         if (lastGood) {
           const d = diagnoseTransition(lastGood.st, sc, cc);
           kind = d.kind;

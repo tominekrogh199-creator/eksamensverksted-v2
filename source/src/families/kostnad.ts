@@ -8,7 +8,7 @@ import { FamilyKB, TemplateDef, randInt, pick, R, no, texNum, step, IntentDef, R
 const FIRMS = [
   { firm: 'Et lite bakeri', good: 'brød', unit: 'brød' },
   { firm: 'En studentbedrift som trykker T-skjorter', good: 'T-skjorter', unit: 'skjorter' },
-  { firm: 'En sykkelverksted', good: 'reparasjoner', unit: 'reparasjoner' },
+  { firm: 'Et sykkelverksted', good: 'reparasjoner', unit: 'reparasjoner' },
   { firm: 'Et mikrobryggeri', good: 'flasker', unit: 'flasker' },
   { firm: 'En app-utvikler som selger abonnement', good: 'abonnement', unit: 'abonnement' },
 ];
