@@ -48,7 +48,7 @@ export interface Segmentation {
   notes: string[];
 }
 
-const TASK_RE = /^\s*(?:Oppgave|OPPGAVE|Oppg\.|Task|Problem)\s+(\d{1,2})(?=\s*$|\s*[(:.–-]|\s+fortsetter|\s+\()\s*(.*)$/;
+const TASK_RE = /^\s*(?:Oppgave|OPPGAVE|Oppg\.|Task|Problem|Question|QUESTION)\s+(\d{1,2})(?=\s*$|\s*[(:.–-]|\s+fortsetter|\s+\()\s*(.*)$/;
 const SUB_RE = /^\s*(?:\(([a-h])\)|([a-h])\))\s*(.*)$/;
 const NOISE_RE = /^(DEMO – syntetisk.*|Side \d+( av \d+)?|\d{1,3})$/;
 

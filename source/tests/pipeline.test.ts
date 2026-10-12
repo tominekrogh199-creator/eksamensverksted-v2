@@ -106,3 +106,14 @@ test('instrukser i dokumenter flagges som data, vanlig oppgavetekst gjør ikke',
   assert.equal(findEmbeddedInstructions('Ignorer transaksjonskostnader. Finn likevektsprisen og gi svaret med enhet.').length, 0);
   assert.equal(findEmbeddedInstructions('Oppgave 2 teller 30 %. Alle svar skal begrunnes.').length, 0);
 });
+
+test('engelskspråklig BI-eksamen gjenkjennes og deles opp', () => {
+  const text = 'BI Norwegian Business School\nWritten examination ORG 1001 Organisasjon og ledelse\nExamination date: 05.12.2025\nQuestion 1 (30 %)\na) Explain the difference between transactional and transformational leadership.\nb) Discuss how culture affects change.\nQuestion 2 (70 %)\nDescribe Mintzberg\'s configurations.';
+  const m = guessMeta('org1001.pdf', text);
+  assert.equal(m.docType, 'eksamen');
+  assert.equal(m.year, 2025);
+  assert.equal(m.term, 'høst');
+  const seg = segmentDocument([{ pdfPage: 1, text }]);
+  assert.ok(seg.tasks.length >= 2, `fant ${seg.tasks.length} oppgaver`);
+  assert.equal(guessMeta('x.pdf', 'Examiner guidelines\nQuestion 1\nA good answer explains ...').docType, 'sensorveiledning');
+});

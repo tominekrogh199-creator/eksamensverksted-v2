@@ -29,12 +29,12 @@ export function guessMeta(fileName: string, text: string, info: { title?: string
   const all = text.toLowerCase();
   let docType: DocType = 'annet';
   let why = '';
-  const guideMarks = (all.match(/løsningskommentar\s*:|sensorveiledning\s*:|^svar\s*:/gm) ?? []).length;
+  const guideMarks = (all.match(/løsningskommentar\s*:|sensorveiledning\s*:|^svar\s*:|^(?:suggested )?(?:answer|solution)\s*:/gm) ?? []).length;
   // Løsning rett etter hver oppgave («Oppgave 1 … Løsning …»).
   const inlineSolutions = (text.match(/^\s*(?:Løsning|Løsningsforslag|LF)\s*:?\s*$/gim) ?? []).length;
   // Oppgavesamling: mange nummererte øvingsoppgaver (P-1.1, 1.2.3) og en egen løsningsdel.
   const exerciseLabels = new Set(text.match(/(?:^|\n)\s*(?:P|Ø|O|E)-?\d{1,2}\.\d{1,2}\b/g) ?? []).size;
-  const examCover = /(eksamen i|eksamensdato|antall oppgaver|tillatte hjelpemidler|antall sider|varighet|eksamenstid)/.test(low);
+  const examCover = /(eksamen i|eksamensdato|antall oppgaver|tillatte hjelpemidler|antall sider|varighet|eksamenstid|examination date|exam date|written examination|support materials?|number of pages|duration)/.test(low);
   if (exerciseLabels >= 8 || /oppgavesamling|regneoppgaver|øvingsoppgaver/.test(low) || /oppgavesamling|øving|tips/.test(fn)) {
     docType = 'oppgavesamling';
     why = exerciseLabels >= 8 ? `Fant ${exerciseLabels} nummererte øvingsoppgaver.` : 'Teksten eller filnavnet tyder på en oppgavesamling med løsninger.';
@@ -44,13 +44,13 @@ export function guessMeta(fileName: string, text: string, info: { title?: string
   } else if (examCover && /sensor|løsning|fasit|lf\b/.test(fn)) {
     docType = 'losningsforslag';
     why = 'Eksamenssett, og filnavnet tyder på at løsningene står i dokumentet. Bekreft typen.';
-  } else if (/sensorveiledning|vurderingsforslag|vurderingskriterier|sensorrettledning/.test(low) || guideMarks >= 2) {
+  } else if (/sensorveiledning|vurderingsforslag|vurderingskriterier|sensorrettledning|examiner guidelines?|grading guidelines?|marking guide|assessment guidelines?/.test(low) || guideMarks >= 2) {
     docType = 'sensorveiledning';
     why = guideMarks >= 2 && !/sensorveiledning/.test(low) ? 'Teksten har «Løsningskommentar/Svar» ved spørsmålene.' : 'Teksten inneholder «sensorveiledning/vurderingsforslag».';
-  } else if (/løsningsforslag|fasit/.test(low)) {
+  } else if (/løsningsforslag|fasit|suggested solutions?|solution proposal/.test(low)) {
     docType = 'losningsforslag';
     why = 'Teksten inneholder «løsningsforslag/fasit».';
-  } else if (/emnebeskrivelse|læringsutbytte|læringsmål|emneplan/.test(low)) {
+  } else if (/emnebeskrivelse|læringsutbytte|læringsmål|emneplan|course description|learning outcomes?/.test(low)) {
     docType = 'fagbeskrivelse';
     why = 'Teksten inneholder «emnebeskrivelse/læringsutbytte».';
   } else if (/min besvarelse|besvarelse av/.test(low) || (/kandidatnummer/.test(low) && !examCover)) {
@@ -59,7 +59,7 @@ export function guessMeta(fileName: string, text: string, info: { title?: string
   } else if (/forelesningsnotat|notater|notat fra/.test(low)) {
     docType = 'laerernotat';
     why = 'Teksten inneholder «notat».';
-  } else if (examCover || /oppgave\s+1/.test(low) || /eksamen/.test(low) || /spørsmål\s*1\b/.test(low)) {
+  } else if (examCover || /oppgave\s+1/.test(low) || /eksamen/.test(low) || /spørsmål\s*1\b/.test(low) || /\b(?:question|task|problem)\s+1\b/.test(low) || /\bexam(?:ination)?\b/.test(low)) {
     docType = 'eksamen';
     why = 'Teksten har nummererte oppgaver eller ordet «eksamen».';
   } else if (/sensor|vurdering|fasit/.test(fn)) {
