@@ -67,10 +67,12 @@ export interface OSegmentation {
 }
 
 const TRAILER_RE = /^(Errata|Vedlegg|Appendiks|Formelark|Formelsamling|Formelverk|Tabeller?)\b/i;
-const HEADER_RE = /^Oppgave\s+(\d{1,2})\b\s*[:.)]?\s*(.*)$/i;
+const HEADER_RE = /^(?:[Oo]ppgave|OPPGAVE|Oppg\.|Spørsmål|SPØRSMÅL|Question|QUESTION|Task|TASK|Problem|PROBLEM)\s+(\d{1,2}|I{1,3}|IV|V|VI{1,3}|IX|X)\b\s*[:.)]?\s*(.*)$/;
+const ROMAN: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+export const taskNumber = (s: string) => (/^\d+$/.test(s) ? Number(s) : ROMAN[s.toUpperCase()] ?? NaN);
 const P_RE = /^(P-\d{1,2}\.\d{1,2})\b\s*(.*)$/;
 const SOL_RE = /^(Løsning|Løsningsforslag|LF|Svar|Fasit)\s*:?\s*$/i;
-const SUB_RE = /^\(?([a-h])\)(?:\s+(.*))?$/;
+const SUB_RE = /^\(?([a-l])\)\s*(.*)$/;
 const PART_HEAD_RE = /^Del\s+(I{1,3}|IV|V|[1-5])\s*$/;
 
 export function looksLikeOppg(pages: OPageInput[]): 'oppgave' | 'samling' | null {
@@ -280,8 +282,16 @@ function segmentOppgave(pages: OPageInput[], opts: { solutionsExpected: boolean 
   const heads: number[] = [];
   all.forEach((l, i) => {
     const m = HEADER_RE.exec(l.text);
-    if (m && l.box[0] < 0.3 && l.text.length < 60 && (l.bold || !m[2] || m[2].length < 40)) heads.push(i);
+    // Vekting i parentes («(Oppgaven teller 50 %. …)») kan gjøre overskriften lang.
+    const weightOnly = !!m && /^\(.*\)$/.test(m[2].trim());
+    if (m && l.box[0] < 0.3 && (l.text.length < 60 || weightOnly) && (l.bold || !m[2] || m[2].length < 40 || weightOnly)) heads.push(i);
   });
+  // Samme nummer to ganger rett etter hverandre («Question 1 Attached» + «Problem 1 (25%)»): behold den siste.
+  for (let h = heads.length - 2; h >= 0; h--) {
+    const a = HEADER_RE.exec(all[heads[h]].text)![1];
+    const b = HEADER_RE.exec(all[heads[h + 1]].text)![1];
+    if (taskNumber(a) === taskNumber(b) && heads[h + 1] - heads[h] <= 8) heads.splice(h, 1);
+  }
   // Etter siste oppgave: sider med errata, vedlegg eller formelark hører ikke til løsningen.
   if (heads.length) {
     const cut = all.findIndex((l, i) => i > heads[heads.length - 1] && TRAILER_RE.test(l.text) && l.text.length < 70 && (l.bold || all[i - 1]?.page !== l.page));
@@ -293,7 +303,7 @@ function segmentOppgave(pages: OPageInput[], opts: { solutionsExpected: boolean 
   for (let h = 0; h < heads.length; h++) {
     const start = heads[h];
     const end = h + 1 < heads.length ? heads[h + 1] : all.length;
-    const no = Number(HEADER_RE.exec(all[start].text)![1]);
+    const no = taskNumber(HEADER_RE.exec(all[start].text)![1]);
     const body = all.slice(start + 1, end);
     // Grense mellom oppgave og løsning.
     let boundary = body.findIndex((l) => SOL_RE.test(l.text));
@@ -304,11 +314,16 @@ function segmentOppgave(pages: OPageInput[], opts: { solutionsExpected: boolean 
         const m = SUB_RE.exec(body[i].text);
         if (!m || body[i].box[0] > 0.35) continue;
         const k = m[1].charCodeAt(0) - 97;
-        if (k <= maxSub) {
+        // Neste bokstav i rekken er en ny deloppgave; en ny runde fra a) er løsningsdelen.
+        // Andre treff (f.eks. «(i)» i en opplisting) ignoreres.
+        if (k === maxSub + 1) {
+          maxSub = k;
+          continue;
+        }
+        if (k === 0 && maxSub >= 1) {
           boundary = i;
           break;
         }
-        maxSub = k;
       }
       // Stilskifte: mindre skrift og lenger til venstre enn oppgaveteksten.
       // Referanse: de første linjene i oppgaveteksten.
@@ -340,7 +355,9 @@ function segmentOppgave(pages: OPageInput[], opts: { solutionsExpected: boolean 
     const intro: OLine[] = [];
     for (const l of textLines) {
       const m = SUB_RE.exec(l.text);
-      if (m && l.box[0] < 0.35) subs.push({ letter: m[1], lines: m[2] ? [{ ...l, text: m[2] }] : [] });
+      // Deloppgaver må komme i rekkefølge (a, b, c …), så «(i)» i en opplisting ikke blir en ny deloppgave.
+      const nextLetter = subs.length ? String.fromCharCode(subs[subs.length - 1].letter.charCodeAt(0) + 1) : 'a';
+      if (m && l.box[0] < 0.35 && m[1] === nextLetter) subs.push({ letter: m[1], lines: m[2] ? [{ ...l, text: m[2] }] : [] });
       else if (subs.length) subs[subs.length - 1].lines.push(l);
       else intro.push(l);
     }

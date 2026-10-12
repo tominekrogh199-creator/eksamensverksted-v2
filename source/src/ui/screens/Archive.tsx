@@ -6,7 +6,7 @@ import { useRef, useState } from 'react';
 import type { SourceDoc, SubTask, PageRec, DocType, Term, ExamType } from '../../domain/types';
 import { DOC_TYPES, STAGE_ORDER, STAGE_LABEL } from '../../domain/types';
 import { store, useStore } from '../../state/store';
-import { ingestFiles, acceptedFile, updateDocMeta, rerunFrom, deleteDocument, replaceDocument, confirmGuideLink, resolveSimilar, setPageText } from '../../analysis/pipeline';
+import { ingestFiles, acceptedFile, updateDocMeta, rerunFrom, reanalyze, deleteDocument, replaceDocument, confirmGuideLink, resolveSimilar, setPageText } from '../../analysis/pipeline';
 import { setReserved } from '../../learning/actions';
 import { Icon } from '../components/Icon';
 import { ConfirmButton, DemoBadge, Empty, Notice, Pill, Sheet, Spinner, Certainty } from '../components/common';
@@ -379,7 +379,7 @@ function DocCard({ doc, open, toggle }: { doc: SourceDoc; open: boolean; toggle:
                 <button className="btn small" onClick={() => replaceRef.current?.click()}>
                   <Icon name="refresh" size={16} /> Erstatt med ny versjon
                 </button>
-                <button className="btn small ghost" onClick={() => rerunFrom(doc.id, 'segmentering')}>
+                <button className="btn small ghost" onClick={() => void reanalyze(doc.id)}>
                   Analyser på nytt
                 </button>
               </>

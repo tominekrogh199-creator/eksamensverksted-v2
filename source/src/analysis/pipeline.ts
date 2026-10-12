@@ -6,7 +6,7 @@ import type { SourceDoc, PageRec, SubTask, StageName, StageState, Course, Family
 import { newId, nowIso, STAGE_ORDER, isExamSet } from '../domain/types';
 
 /** Øk når behandlingskjeden forbedres; eldre dokumenter analyseres da på nytt automatisk. */
-export const PIPELINE_VERSION = 4;
+export const PIPELINE_VERSION = 5; // 5: bedre oppgaveoppdeling (nummererte lister, engelsk, logo ≠ figur)
 import { store } from '../state/store';
 import { blobs } from '../storage/backend';
 import { sha256Hex, textSimilarity } from '../ingest/fingerprint';
@@ -560,7 +560,9 @@ async function stageSegment(id: string) {
     const oin = pages.map((p) => ({ pdfPage: p.pdfPage, text: p.text, lines: p.lines, figureBoxes: p.figureBoxes }));
     if (looksLikeOppg(oin)) {
       const o = segmentOppg(oin, { solutionsExpected: d.meta.docType !== 'eksamen' });
-      if (o.items.length >= 1) {
+      // Kontroll: finner den generelle oppdeleren klart flere oppgaver i et eksamenssett, brukes den i stedet.
+      const generic = d.meta.docType === 'eksamen' ? segmentDocument(input).tasks.length : 0;
+      if (o.items.length >= 1 && new Set(o.items.map((i) => i.taskNo)).size >= generic) {
         segmentOppgDoc(d, pages, o);
         return;
       }
@@ -617,6 +619,17 @@ async function stageSegment(id: string) {
       items = r.data.map((t) => ({ taskNo: t.taskNo, sub: t.sub, label: `${t.taskNo}${t.sub}`, intro: t.intro, text: t.text, pages: t.pdfPages.length ? t.pdfPages : [1], points: t.points, pointsQuote: t.pointsQuote, subtaskCount: byTask.get(t.taskNo) ?? 1, figurePages: t.pdfPages.filter((n) => pages.find((p) => p.pdfPage === n)?.hasFigure), boxes: [], dependsOn: [] }));
     }
   }
+  // Siste utvei: teksten finnes, men ingen oppgaver ble funnet. Da blir hele teksten én oppgave
+  // (tydelig merket), så settet kan brukes i stedet for å forsvinne.
+  let wholeText = false;
+  if (!items.length) {
+    const used = pages.filter((p) => p.text.replace(/\s/g, '').length > 0);
+    const text = used.map((p) => p.text).join('\n').replace(/[ \t]+/g, ' ').trim();
+    if (text.length >= 40) {
+      wholeText = true;
+      items = [{ taskNo: 1, sub: '', label: '1', intro: '', text, pages: used.map((p) => p.pdfPage), subtaskCount: 1, figurePages: used.filter((p) => p.hasFigure).map((p) => p.pdfPage), boxes: [], dependsOn: [] }];
+    }
+  }
   const now = nowIso();
   const keep = new Set<string>();
   for (const it of items) {
@@ -665,7 +678,7 @@ async function stageSegment(id: string) {
   patchDoc(id, { equalSubWeights: equal });
   setStage(id, 'segmentering', {
     status: items.length ? 'ferdig' : 'trenger-hjelp',
-    note: items.length ? `${seg.tasks.length || new Set(items.map((i) => i.taskNo)).size} oppgaver, ${items.length} deloppgaver${aiSeg ? ' (AI-segmentert, kontroller mot originalen)' : ''}` : 'Fant ingen oppgaver. Kontroller at teksten er lest, eller merk dokumenttypen.',
+    note: wholeText ? 'Fant ingen nummererte oppgaver, så hele teksten er lagt inn som én oppgave. Kontroller mot originalen; du kan rette teksten i oppgaven.' : items.length ? `${seg.tasks.length || new Set(items.map((i) => i.taskNo)).size} oppgaver, ${items.length} deloppgaver${aiSeg ? ' (AI-segmentert, kontroller mot originalen)' : ''}` : 'Fant ingen oppgaver. Kontroller at teksten er lest, eller merk dokumenttypen.',
   });
 }
 
@@ -1117,6 +1130,16 @@ export function rerunFrom(docId: string, stage: StageName) {
   void processQueue();
 }
 
+/** «Analyser på nytt»: leser sidene på nytt når originalen finnes her (retter også sideklassifisering), ellers bare oppdelingen. */
+export async function reanalyze(docId: string) {
+  const d = store.get<SourceDoc>('doc', docId);
+  if (!d) return;
+  const has = await blobs.get(blobRef(d)).catch(() => null);
+  // Sider du har rettet selv, skal ikke overskrives av en ny lesing.
+  const edited = store.pages(docId).some((p) => p.docVersion === d.version && p.status === 'manuelt-rettet');
+  rerunFrom(docId, has && !edited ? 'sidelesing' : 'segmentering');
+}
+
 export function updateDocMeta(docId: string, patch: Partial<SourceDoc['meta']>, extra: Partial<SourceDoc> = {}) {
   const d = store.get<SourceDoc>('doc', docId);
   if (!d) return;
@@ -1201,7 +1224,8 @@ export async function migrateDocs(): Promise<number> {
     const has = await blobs.get(blobRef(d)).catch(() => null);
     if (!has) continue;
     const stages = { ...d.stages };
-    for (const st of STAGE_ORDER.slice(1)) stages[st] = { status: 'venter', note: 'Analyseres på nytt med forbedret lesing' };
+    const edited = store.pages(d.id).some((p) => p.docVersion === d.version && p.status === 'manuelt-rettet');
+    for (const st of STAGE_ORDER.slice(edited ? STAGE_ORDER.indexOf('segmentering') : 1)) stages[st] = { status: 'venter', note: 'Analyseres på nytt med forbedret lesing' };
     store.upsert({ ...d, stages, status: 'behandles', pipelineVersion: PIPELINE_VERSION }, { silent: true });
     n++;
   }

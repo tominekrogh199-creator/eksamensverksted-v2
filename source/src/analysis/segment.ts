@@ -48,8 +48,12 @@ export interface Segmentation {
   notes: string[];
 }
 
-const TASK_RE = /^\s*(?:Oppgave|OPPGAVE|Oppg\.|Task|Problem|Question|QUESTION)\s+(\d{1,2})(?=\s*$|\s*[(:.–-]|\s+fortsetter|\s+\()\s*(.*)$/;
-const SUB_RE = /^\s*(?:\(([a-h])\)|([a-h])\))\s*(.*)$/;
+const TASK_RE = /^\s*(?:[Oo]ppgave|OPPGAVE|Oppg\.|Spørsmål|SPØRSMÅL|Task|TASK|Problem|PROBLEM|Question|QUESTION)\s+(\d{1,2}|I{1,3}|IV|V|VI{1,3}|IX|X)(?=\s*$|\s*[(:.–-]|\s+fortsetter|\s+\()\s*(.*)$/;
+const SUB_RE = /^\s*(?:\(([a-l])\)|([a-l])\))\s*(.*)$/;
+// «1a) …» eller «1 a) …»: oppgave og deloppgave på samme linje.
+const NUMSUB_RE = /^\s*(\d{1,2})\s?([a-l])\)\s*(.*)$/;
+const ROMAN: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+const taskNo = (s: string) => (/^\d+$/.test(s) ? parseInt(s, 10) : ROMAN[s] ?? NaN);
 const NOISE_RE = /^(DEMO – syntetisk.*|Side \d+( av \d+)?|\d{1,3})$/;
 
 function parsePoints(s: string): { points?: number; weightPct?: number; quote?: string } {
@@ -78,7 +82,7 @@ export function segmentDocument(pages: PageInput[]): Segmentation {
 
   // Reserve for sett uten «Oppgave N»-overskrifter, f.eks. «Besvar følgende oppgaver: 1. … 2. …».
   // Krever en nummerert liste som starter på 1 og går fortløpende, så datoer og tall i teksten ikke treffer.
-  const plainNo = (t: string) => /^\s*(\d{1,2})\s*[.)]\s+(?=\S)(?!\d)(.*)$/.exec(t);
+  const plainNo = (t: string) => /^\s*\(?(\d{1,2})\s*[.)]\s+(?=\S)(?!\d)(.*)$/.exec(t);
   const useNumbered = !all.some((l) => TASK_RE.test(l.text)) && (() => {
     let next = 1;
     for (const l of all) {
@@ -89,6 +93,21 @@ export function segmentDocument(pages: PageInput[]): Segmentation {
   })();
   let expectNo = 1;
   for (const line of all) {
+    const ns = NUMSUB_RE.exec(line.text);
+    if (ns && !TASK_RE.test(line.text)) {
+      const n = parseInt(ns[1], 10);
+      let t = tasks.find((x) => x.taskNo === n);
+      if (!t && (n === (tasks.length ? tasks[tasks.length - 1].taskNo + 1 : 1))) {
+        t = { taskNo: n, header: `Oppgave ${n}`, headerPage: line.page, intro: '', introLines: [], subtasks: [], figurePages: [] };
+        tasks.push(t);
+      }
+      if (t && !t.subtasks.some((x) => x.sub === ns[2])) {
+        cur = t;
+        curSub = { taskNo: n, sub: ns[2], label: `${n}${ns[2]}`, lines: [{ ...line, text: ns[3] }], text: '', pages: [], dependsOn: [], figurePages: [] };
+        t.subtasks.push(curSub);
+        continue;
+      }
+    }
     let tm = TASK_RE.exec(line.text);
     if (!tm && useNumbered) {
       const m = plainNo(line.text);
@@ -102,7 +121,7 @@ export function segmentDocument(pages: PageInput[]): Segmentation {
       }
     }
     if (tm && !/fortsetter|forts\.|continued/i.test(tm[2]) && !/^[a-h]\)/.test(tm[2])) {
-      const n = parseInt(tm[1], 10);
+      const n = taskNo(tm[1]);
       const existing = tasks.find((t) => t.taskNo === n);
       if (existing) {
         // Samme oppgavenummer igjen: behandles som fortsettelse, ikke ny oppgave.
@@ -118,7 +137,7 @@ export function segmentDocument(pages: PageInput[]): Segmentation {
       continue;
     }
     if (tm && /fortsetter|forts\.|continued/i.test(tm[2])) {
-      const n = parseInt(tm[1], 10);
+      const n = taskNo(tm[1]);
       const existing = tasks.find((t) => t.taskNo === n);
       if (existing) {
         cur = existing;
@@ -131,7 +150,9 @@ export function segmentDocument(pages: PageInput[]): Segmentation {
       continue;
     }
     const sm = SUB_RE.exec(line.text);
-    if (sm) {
+    // Deloppgaver kommer i rekkefølge; «(i)» i en opplisting eller en gjentatt bokstav er vanlig tekst.
+    const nextSub = cur.subtasks.length ? String.fromCharCode(cur.subtasks[cur.subtasks.length - 1].sub.charCodeAt(0) + 1) : 'a';
+    if (sm && ((sm[1] ?? sm[2]).toLowerCase() === nextSub || cur.subtasks.some((s) => s.sub === (sm[1] ?? sm[2]).toLowerCase()))) {
       const sub = (sm[1] ?? sm[2]).toLowerCase();
       const existing = cur.subtasks.find((s) => s.sub === sub);
       if (existing) {
