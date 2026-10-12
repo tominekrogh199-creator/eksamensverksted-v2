@@ -9,6 +9,11 @@ import { blobs } from '../../storage/backend';
 import { offerDownload } from '../../storage/platform';
 import { ConfirmButton, Notice, Pill } from '../components/common';
 import { Icon } from '../components/Icon';
+import { game, resetCourseProgress } from '../../learning/game';
+import { mergeGame } from '../../learning/merge';
+import { cleanupCandidates, runCleanup, entityCount, DOC_LIMIT } from '../../storage/cleanup';
+import { clearLeftovers, leftovers } from '../../storage/leftovers';
+import type { GameRec } from '../../domain/types';
 
 export function Settings() {
   // Nytt skjema når faget byttes, så feltene aldri viser (og lagrer) et annet fag.
@@ -22,6 +27,7 @@ function SettingsForm() {
   const ui = useStore((s) => s.ui);
   const [c, setC] = useState<Course | undefined>(course);
   const [newName, setNewName] = useState('');
+  const [cleanup, setCleanup] = useState<ReturnType<typeof cleanupCandidates> | null>(null);
   if (!course || !c) return null;
   const save = () => {
     store.upsert({ ...course, ...c, name: c.name.trim() || course.name });
@@ -42,7 +48,8 @@ function SettingsForm() {
   const deleteHistory = async () => {
     await removePhotos();
     for (const k of ['attempt', 'evidence', 'session', 'exam'] as const) for (const e of store.list(k, course.id)) store.remove(e);
-    store.toast('Forsøk, bilder, mestringshistorikk og prøver for faget er slettet.', 'ok');
+    resetCourseProgress(course.id);
+    store.toast('Forsøk, bilder, mestringshistorikk, prøver og fremgangen i planen for faget er slettet. Samlede poeng og dager på rad er beholdt.', 'ok');
   };
   const deleteCourse = async () => {
     await removePhotos();
@@ -55,6 +62,26 @@ function SettingsForm() {
     store.setUi({ activeCourseId: rest[0]?.id });
     store.navigate(rest[0] ? { name: 'start' } : { name: 'velkommen' });
     store.toast('Faget og alt innholdet er slettet.', 'ok');
+  };
+  // Arbeid som ble lagret bare i nettleseren mens skyen ikke svarte: last det opp nå.
+  const uploadLeftovers = async () => {
+    const list = leftovers();
+    let n = 0;
+    for (const e of list) {
+      if (e.kind === 'game') store.upsert(mergeGame(e as GameRec, game()));
+      else store.upsert(e);
+      n++;
+    }
+    const ok = await store.waitSaved();
+    if (ok) await clearLeftovers();
+    store.setUi({ localLeftovers: ok ? 0 : ui.localLeftovers });
+    store.toast(ok ? `${n} element${n === 1 ? '' : 'er'} fra denne nettleseren er lastet opp.` : 'Opplastingen ble ikke ferdig. Prøv igjen om litt.', ok ? 'ok' : 'info');
+  };
+  const doCleanup = () => {
+    if (!cleanup) return;
+    const n = runCleanup(cleanup.items);
+    setCleanup(null);
+    store.toast(`${n} element${n === 1 ? '' : 'er'} ryddet bort.`, 'ok');
   };
   const uploadOriginals = async () => {
     if (!store.platform?.assets) return;
@@ -183,6 +210,53 @@ function SettingsForm() {
             </div>
           </div>
         ) : null}
+        {ui.localLeftovers ? (
+          <Notice tone="amber">
+            <div className="stack sm">
+              <span>
+                {ui.localLeftovers} endring{ui.localLeftovers === 1 ? '' : 'er'} ble lagret bare i denne nettleseren da lagringen på kontoen ikke svarte.
+              </span>
+              <div>
+                <button className="btn small primary" onClick={() => void uploadLeftovers()}>
+                  Last opp til kontoen min
+                </button>
+              </div>
+            </div>
+          </Notice>
+        ) : null}
+        <div className="stack sm">
+          <span className="small muted">
+            Lagret nå: {entityCount()} elementer{ui.storageKind === 'sky' ? ` (grense ${DOC_LIMIT})` : ''}.
+          </span>
+          {cleanup ? (
+            cleanup.items.length ? (
+              <div className="stack sm">
+                <span className="small">Dette kan ryddes bort uten at noe du har levert, eller mestringsbildet ditt, forsvinner:</span>
+                <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+                  {cleanup.summary.map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+                <div className="row">
+                  <button className="btn small primary" onClick={doCleanup}>
+                    Rydd bort {cleanup.items.length}
+                  </button>
+                  <button className="btn small ghost" onClick={() => setCleanup(null)}>
+                    Avbryt
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <span className="small ok-text">Ingenting å rydde. Alt er i bruk.</span>
+            )
+          ) : (
+            <div>
+              <button className="btn small" onClick={() => setCleanup(cleanupCandidates())}>
+                Rydd opp i lagringen
+              </button>
+            </div>
+          )}
+        </div>
         {ui.writeError ? <Notice tone="red">{ui.writeError}</Notice> : null}
       </section>
       <section className="card stack">
@@ -222,7 +296,7 @@ function SettingsForm() {
           <button className="btn" onClick={exportData}>
             <Icon name="download" size={16} /> Eksporter data for faget (JSON)
           </button>
-          <ConfirmButton confirmText="Slette alle forsøk, prøver og mestringshistorikk for faget?" onConfirm={deleteHistory}>
+          <ConfirmButton confirmText="Slette alle forsøk, prøver, mestringshistorikk og fremgangen i planen (leksjoner og quizrekorder) for faget?" onConfirm={deleteHistory}>
             Slett forsøk og historikk
           </ConfirmButton>
           <ConfirmButton confirmText="Slette faget med alle dokumenter, bilder, analyser og historikk?" onConfirm={deleteCourse}>
