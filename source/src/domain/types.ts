@@ -647,6 +647,8 @@ export interface GameRec extends BaseEntity {
   lastDay?: string;
   topics: Record<string, { lessonDoneAt?: string; lessonCards?: number; quizBest?: number; quizMax?: number; solved?: number; attempted?: number; xp?: number; lastAt?: string }>;
   chapters: Record<string, { best?: CompetitionRun; runs: number }>;
+  /** Når fremgangen i et fag sist ble nullstilt (fag-id → tidspunkt). Hindrer at en annen enhet legger den tilbake. */
+  resets?: Record<string, string>;
 }
 
 export type Entity = Course | SourceDoc | PageRec | SubTask | Family | GeneratedTask | Attempt | Evidence | SessionRec | ExamSim | SettingsRec | LearnerProfile | LessonRec | GameRec;

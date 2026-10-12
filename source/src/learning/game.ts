@@ -141,7 +141,19 @@ export function topicState(kbId: string, courseId = store.ui.activeCourseId ?? '
 export function patchTopic(kbId: string, patch: GameRec['topics'][string], courseId = store.ui.activeCourseId ?? '') {
   const g = game();
   const k = topicKey(courseId, kbId);
-  return store.upsert({ ...g, topics: { ...g.topics, [k]: { ...g.topics[k], ...patch } } });
+  return store.upsert({ ...g, topics: { ...g.topics, [k]: { ...g.topics[k], lastAt: nowIso(), ...patch } } });
+}
+
+/**
+ * Nullstiller fremgangen i ett fag: leksjoner, quizrekorder, oppgavetellere og
+ * konkurranserekorder. Samlede poeng og dager på rad beholdes (de gjelder alle fag).
+ */
+export function resetCourseProgress(courseId: string): GameRec {
+  const g = game();
+  const pre = `${courseId}:`;
+  const topics = Object.fromEntries(Object.entries(g.topics).filter(([k]) => !k.startsWith(pre)));
+  const chapters = Object.fromEntries(Object.entries(g.chapters).filter(([k]) => !k.startsWith(pre)));
+  return store.upsert({ ...g, topics, chapters, resets: { ...g.resets, [courseId]: nowIso() } });
 }
 
 /** Lagrer et konkurranseforsøk. Returnerer om det ble ny rekord. */

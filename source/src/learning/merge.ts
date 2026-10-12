@@ -41,8 +41,17 @@ export function mergeGame(local: GameRec, remote: GameRec): GameRec {
     const best = !l.best ? r.best : !r.best ? l.best : l.best.score >= r.best.score ? l.best : r.best;
     chapters[k] = { best, runs: Math.max(l.runs, r.runs) };
   }
+  // Nullstilt fag: det som ble gjort før nullstillingen (på en annen enhet), skal ikke tilbake.
+  const resets: Record<string, string> = { ...remote.resets };
+  for (const [c, at] of Object.entries(local.resets ?? {})) resets[c] = later(at, resets[c])!;
+  for (const [c, at] of Object.entries(resets)) {
+    const pre = `${c}:`;
+    for (const [k, t] of Object.entries(topics)) if (k.startsWith(pre) && (t.lastAt ?? t.lessonDoneAt ?? '') < at) delete topics[k];
+    for (const [k, ch] of Object.entries(chapters)) if (k.startsWith(pre) && (ch.best?.at ?? '') < at) delete chapters[k];
+  }
   return {
     ...local,
+    resets,
     xp: Math.max(local.xp, remote.xp),
     days,
     streak: Math.max(local.streak, remote.streak),
