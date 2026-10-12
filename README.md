@@ -15,6 +15,7 @@ Appen må åpnes via en liten lokal server – dobbeltklikk på `index.html` gj�
 
 ## Filer
 - `index.html` – side + stil
-- `app.js` – hele appen (ferdig bygget/minifisert, kildekoden er ikke med)
+- `app.js` – hele appen (ferdig bygget). Kildekoden ligger i `source/`
+- Bygge på nytt: `cd source && npm install && npm run build:root`
 - `vendor/` – PDF-leser, Word-leser og OCR (norsk) lokalt
 - `demo/` – oppdiktet demomateriale
