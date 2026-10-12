@@ -191,7 +191,7 @@ export function documentedRequirements(text: string): { text: string; basis: Cri
   if (/vis (utregning|beregning|hvordan)|vis at|vis framgangs/.test(t)) add('Utregningen skal vises, ikke bare svaret («vis …» står i oppgaven).');
   if (/forklar|begrunn|hvorfor/.test(t)) add('Svaret skal inneholde en forklaring eller begrunnelse («forklar/begrunn» står i oppgaven).');
   if (/tolk/.test(t)) add('Resultatet skal tolkes i sammenhengen («tolk» står i oppgaven).');
-  if (/tegn|illustrer|figur|diagram/.test(t)) add('Oppgaven ber om eller viser til en figur eller et diagram.');
+  if (/(?<![a-zæøå])(?:tegn|illustrer)|figur|diagram/.test(t)) add('Oppgaven ber om eller viser til en figur eller et diagram.');
   if (/drøft|vurder|diskuter/.test(t)) add('Svaret skal drøfte eller vurdere, ikke bare beregne («drøft/vurder» står i oppgaven).');
   if (/kontroller|sjekk/.test(t)) add('Svaret skal kontrolleres («kontroller» står i oppgaven).');
   if (/(finn|beregn|regn ut)/.test(t)) add('Oppgaven ber om en beregnet verdi («finn/beregn»).');

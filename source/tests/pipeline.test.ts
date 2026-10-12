@@ -142,3 +142,10 @@ studiene dine?`;
   // Datoer og tall i vanlig tekst skal ikke bli oppgaver.
   assert.equal(segmentDocument([{ pdfPage: 1, text: 'Notat\n17. desember 2024 var det eksamen.\n3. mars også.' }]).tasks.length, 0);
 });
+
+test('«kjennetegner» er ikke et krav om å tegne', async () => {
+  const { documentedRequirements } = await import('../src/families/common');
+  const has = (t: string) => documentedRequirements(t).some((r) => /figur eller et diagram/.test(r.text));
+  assert.equal(has('Hva kjennetegner klassisk organisasjonsteori med vekt på byråkrati?'), false);
+  assert.equal(has('Tegn tilbuds- og etterspørselskurven.'), true);
+});

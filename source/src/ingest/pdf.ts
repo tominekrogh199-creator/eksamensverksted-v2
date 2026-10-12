@@ -279,6 +279,8 @@ export function figureRegions(fnArray: number[], argsArray: any[], vpTransform: 
     const w = b.x1 - b.x0;
     const h = b.y1 - b.y0;
     if (w < 0.08 || h < 0.05) return false;
+    // Et lite enkeltbilde (logo, ikon) er ikke en figur som hører til oppgaven.
+    if (b.image && b.n <= 1 && w < 0.15 && h < 0.12) return false;
     return b.image || b.n >= 4;
   });
 }
