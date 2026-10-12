@@ -117,3 +117,28 @@ test('engelskspråklig BI-eksamen gjenkjennes og deles opp', () => {
   assert.ok(seg.tasks.length >= 2, `fant ${seg.tasks.length} oppgaver`);
   assert.equal(guessMeta('x.pdf', 'Examiner guidelines\nQuestion 1\nA good answer explains ...').docType, 'sensorveiledning');
 });
+
+test('BI-eksamen med nummerert liste uten «Oppgave N» gir oppgaver (ORG3403)', () => {
+  const text = `ORG 34031 Organisasjonsatferd og ledelse - Slot 1
+ORG 34031: Skriftlig eksamen
+Vekt:100% av ORG 3403
+Oppgaven besvares: Individuelt
+Tillatte hjelpemidler: Ingen hjelpemidler tillatt
+Skriftstørrelse: 12
+Under er det gitt fem oppgaver. Alle de fem oppgavene må besvares for at du skal bestå dette
+faget og vil telle likt ved sensur.
+Besvar følgende oppgaver:
+1. Hva vil det si å ta en beslutning og hva kan beskrives som en god beslutning?
+2. Hva menes med begrepet tillit i organisasjonssammenheng?
+3. Hva kjennetegner klassisk organisasjonsteori med vekt på byråkrati?
+4. Hvordan kan destruktiv ledelse forklares gjennom personlighets, situasjons- og integrert
+perspektiv?
+5. Hva menes med atferds-strategiene i selvledelse? Hvordan kan du anvende disse i
+studiene dine?`;
+  assert.equal(guessMeta('ORG3403_2024-12-17_kl_08_EP.pdf', text).docType, 'eksamen');
+  const seg = segmentDocument([{ pdfPage: 1, text }]);
+  assert.equal(seg.tasks.length, 5);
+  assert.match(seg.tasks[3].subtasks[0].text, /integrert perspektiv\?$/);
+  // Datoer og tall i vanlig tekst skal ikke bli oppgaver.
+  assert.equal(segmentDocument([{ pdfPage: 1, text: 'Notat\n17. desember 2024 var det eksamen.\n3. mars også.' }]).tasks.length, 0);
+});

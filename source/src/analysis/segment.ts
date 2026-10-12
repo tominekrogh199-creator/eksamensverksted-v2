@@ -76,8 +76,31 @@ export function segmentDocument(pages: PageInput[]): Segmentation {
   let cur: SegTask | null = null;
   let curSub: SegSubtask | null = null;
 
+  // Reserve for sett uten «Oppgave N»-overskrifter, f.eks. «Besvar følgende oppgaver: 1. … 2. …».
+  // Krever en nummerert liste som starter på 1 og går fortløpende, så datoer og tall i teksten ikke treffer.
+  const plainNo = (t: string) => /^\s*(\d{1,2})\s*[.)]\s+(?=\S)(?!\d)(.*)$/.exec(t);
+  const useNumbered = !all.some((l) => TASK_RE.test(l.text)) && (() => {
+    let next = 1;
+    for (const l of all) {
+      const m = plainNo(l.text);
+      if (m && parseInt(m[1], 10) === next && /[A-Za-zÆØÅæøå]{3}/.test(m[2])) next++;
+    }
+    return next > 1;
+  })();
+  let expectNo = 1;
   for (const line of all) {
-    const tm = TASK_RE.exec(line.text);
+    let tm = TASK_RE.exec(line.text);
+    if (!tm && useNumbered) {
+      const m = plainNo(line.text);
+      if (m && parseInt(m[1], 10) === expectNo && /[A-Za-zÆØÅæøå]{3}/.test(m[2])) {
+        expectNo++;
+        const n = parseInt(m[1], 10);
+        cur = { taskNo: n, header: `Oppgave ${n}`, headerPage: line.page, intro: '', introLines: [{ ...line, text: m[2] }], subtasks: [], figurePages: [] };
+        tasks.push(cur);
+        curSub = null;
+        continue;
+      }
+    }
     if (tm && !/fortsetter|forts\.|continued/i.test(tm[2]) && !/^[a-h]\)/.test(tm[2])) {
       const n = parseInt(tm[1], 10);
       const existing = tasks.find((t) => t.taskNo === n);

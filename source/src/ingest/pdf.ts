@@ -327,6 +327,7 @@ export async function extractPdf(bytes: Uint8Array, onPage?: (n: number, total: 
     let imageOps = 0;
     let pathOps = 0;
     let regions: Box[] = [];
+    let regionsOk = false;
     try {
       // Operatorlisten først: den laster skriftene, slik at vi kan se hvilke som er fete.
       const ol = await page.getOperatorList();
@@ -335,6 +336,7 @@ export async function extractPdf(bytes: Uint8Array, onPage?: (n: number, total: 
         if (fn === OPS.constructPath) pathOps++;
       }
       regions = figureRegions(ol.fnArray as number[], ol.argsArray as any[], vp.transform as M, vp.width, vp.height);
+      regionsOk = true;
     } catch {
       /* operatorliste er bare et hint */
     }
@@ -365,7 +367,7 @@ export async function extractPdf(bytes: Uint8Array, onPage?: (n: number, total: 
     const hasTextLayer = !garbled && (chars > 25 || (chars >= 3 && imageOps === 0));
     const numericLines = lines.filter((l) => /^[\d\s.,−-]+$/.test(l.t) && l.t.trim().length <= 40).length;
     const figureBoxes: [number, number, number, number][] = regions.map((r) => withLabels(r, readable));
-    if (!figureBoxes.length && (pathOps >= 12 || imageOps > 0 || numericLines >= 5) && lines.length) {
+    if (!figureBoxes.length && (pathOps >= 12 || (imageOps > 0 && !regionsOk) || numericLines >= 5) && lines.length) {
       // Reserve: det største tomrommet mellom tekstlinjene.
       const sorted = [...lines].sort((a, b) => a.b[1] - b.b[1]);
       let best: [number, number] = [0, 0];
