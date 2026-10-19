@@ -1,10 +1,12 @@
 // Ferdighetsregister. Ferdighetene er observerbare handlinger, ikke temaer.
 
+import { ORG_SKILLS } from './org';
+
 export interface SkillDef {
   id: string;
   name: string;
   observable: string; // hva studenten må gjøre for at vi skal se ferdigheten
-  group: 'grunnlag' | 'likevekt' | 'avgift' | 'prosent' | 'kostnad' | 'arbeidsmarked' | 'mikro' | 'makro' | 'elektro' | 'digital';
+  group: 'grunnlag' | 'likevekt' | 'avgift' | 'prosent' | 'kostnad' | 'arbeidsmarked' | 'mikro' | 'makro' | 'elektro' | 'digital' | 'org';
   prerequisites: string[];
 }
 
@@ -90,6 +92,7 @@ export const SKILLS: SkillDef[] = [
   { id: 'dig.vipper', name: 'Forstå vipper og klokkeflanker', observable: 'Beskriver D-, JK- og T-vipper og bruker dem til å lagre tilstand.', group: 'digital', prerequisites: [] },
   { id: 'dig.tilstand', name: 'Designe tilstandsmaskiner og tellere', observable: 'Lager tilstandsdiagram, tabell og uttrykk for D-inngangene og utgangene.', group: 'digital', prerequisites: ['dig.vipper', 'dig.karnaugh'] },
   { id: 'dig.verilog', name: 'Lese og rette enkel Verilog', observable: 'Bruker always @(posedge clk) med «<=» og assign for utganger.', group: 'digital', prerequisites: ['dig.tilstand'] },
+  ...ORG_SKILLS,
 ];
 
 export const SKILL_MAP: Record<string, SkillDef> = Object.fromEntries(SKILLS.map((s) => [s.id, s]));

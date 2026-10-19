@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { store, useStore, useSaveState, Route } from '../state/store';
 import { Icon } from './components/Icon';
 import { SourceViewer } from './components/SourceViewer';
-import { Sheet, Pill, DemoBadge, Spinner } from './components/common';
+import { Sheet, Pill, DemoBadge, Spinner, ConfirmButton } from './components/common';
+import { leftovers, clearLeftovers } from '../storage/leftovers';
 import { Welcome } from './screens/Start';
 import { PathHome } from './screens/Path';
 import { Lesson } from './screens/Lesson';
@@ -17,9 +18,14 @@ import { Progress } from './screens/Progress';
 import { Exam } from './screens/Exam';
 import { Settings } from './screens/Settings';
 import { Status } from './screens/Status';
+import { Flashcards } from './screens/Flashcards';
+import { Models } from './screens/Models';
+import { isConceptCourse } from '../learning/flash';
+
+type NavItem = { name: Route['name']; label: string; short: string; icon: string; tab?: boolean };
 
 // Fanelinjen på mobil: det du bruker hver dag. Resten ligger i menyen (trykk på fagnavnet).
-const NAV: { name: Route['name']; label: string; short: string; icon: string; tab?: boolean }[] = [
+const NAV_STD: NavItem[] = [
   { name: 'start', label: 'Eksamensplan', short: 'Plan', icon: 'home', tab: true },
   { name: 'tren', label: 'Tren', short: 'Tren', icon: 'pencil', tab: true },
   { name: 'eksamen', label: 'Prøveeksamen', short: 'Prøve', icon: 'clock', tab: true },
@@ -28,6 +34,19 @@ const NAV: { name: Route['name']; label: string; short: string; icon: string; ta
   { name: 'utvikling', label: 'Min utvikling', short: 'Utvikling', icon: 'target' },
   { name: 'kart', label: 'Eksamenskart', short: 'Kart', icon: 'map' },
   { name: 'formel', label: 'Formler', short: 'Formler', icon: 'book' },
+];
+
+// Begrepsfag (organisasjon og ledelse): flashcards og modeller i stedet for formler.
+const NAV_ORG: NavItem[] = [
+  { name: 'start', label: 'Eksamensplan', short: 'Plan', icon: 'home', tab: true },
+  { name: 'kort', label: 'Flashcards', short: 'Kort', icon: 'layers', tab: true },
+  { name: 'tren', label: 'Tren', short: 'Tren', icon: 'pencil', tab: true },
+  { name: 'eksamen', label: 'Prøveeksamen', short: 'Prøve', icon: 'clock', tab: true },
+  { name: 'ommeg', label: 'Meg', short: 'Meg', icon: 'chart', tab: true },
+  { name: 'modeller', label: 'Modeller', short: 'Modeller', icon: 'grid' },
+  { name: 'arkiv', label: 'Eksamensarkiv', short: 'Arkiv', icon: 'archive' },
+  { name: 'utvikling', label: 'Min utvikling', short: 'Utvikling', icon: 'target' },
+  { name: 'kart', label: 'Eksamenskart', short: 'Kart', icon: 'map' },
 ];
 
 function go(name: Route['name']) {
@@ -47,7 +66,10 @@ export function App() {
   const writeError = useStore((s) => s.ui.writeError);
   const loadError = useStore((s) => s.ui.loadError);
   const loadErrorLocal = useStore((s) => s.ui.loadErrorLocal);
+  const leftover = useStore((s) => s.ui.localLeftovers);
   const [menu, setMenu] = useState(false);
+  const conceptCourse = useStore(() => isConceptCourse());
+  const NAV = conceptCourse ? NAV_ORG : NAV_STD;
   useEffect(() => {
     document.documentElement.classList.toggle('reduce-motion', reduced);
   }, [reduced]);
@@ -113,6 +135,10 @@ export function App() {
     <Settings />
   ) : active === 'status' ? (
     <Status />
+  ) : active === 'kort' ? (
+    <Flashcards key={route.name === 'kort' ? `${route.topic ?? ''}-${route.type ?? ''}` : 'kort'} />
+  ) : active === 'modeller' ? (
+    <Models key={route.name === 'modeller' ? route.modelId ?? '' : 'modeller'} />
   ) : (
     <PathHome />
   );
@@ -175,6 +201,7 @@ export function App() {
             </div>
           </div>
         ) : null}
+        {leftover ? <LeftoverBanner n={leftover} /> : null}
         <main id="innhold">{screen}</main>
       </div>
       {!noCourse && !(active === 'eksamen' && route.name === 'eksamen' && route.examId && store.get<import('../domain/types').ExamSim>('exam', route.examId)?.status === 'pågår') ? (
@@ -238,6 +265,47 @@ export function App() {
             {t.text}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Arbeid som ble lagret bare i nettleseren (da skyen ikke svarte): last opp eller forkast. */
+function LeftoverBanner({ n }: { n: number }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={{ padding: '8px 16px' }}>
+      <div className="notice amber small row between" role="status">
+        <span>
+          {n} endring{n === 1 ? '' : 'er'} fra en gang skylagringen ikke svarte, ligger bare i denne nettleseren.
+        </span>
+        <span className="row">
+          <button
+            className="btn small primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              const list = leftovers();
+              store.upsertMany(list);
+              const ok = await store.waitSaved(30000);
+              if (ok) await clearLeftovers();
+              store.setUi({ localLeftovers: ok ? undefined : n });
+              store.toast(ok ? `${list.length} endringer er lastet opp til kontoen din.` : 'Ikke alt ble lagret ennå. Prøv igjen om litt.', ok ? 'ok' : 'info');
+              setBusy(false);
+            }}
+          >
+            Last opp
+          </button>
+          <ConfirmButton
+            confirmText="Forkaste endringene som bare ligger i denne nettleseren?"
+            onConfirm={async () => {
+              await clearLeftovers();
+              store.setUi({ localLeftovers: undefined });
+            }}
+          >
+            Forkast
+          </ConfirmButton>
+        </span>
       </div>
     </div>
   );

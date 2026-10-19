@@ -10,6 +10,7 @@ import { BASIC_SKILLS } from '../families/skills';
 import { originalPool } from './originals';
 import { facetsFor } from './mastery';
 import { topicState, chapterBest } from './game';
+import { ORG_TOPICS } from '../families/org';
 
 export interface TopicStat {
   kbId: string;
@@ -74,6 +75,11 @@ export function topicStats(): TopicStat[] {
   };
   for (const s of subs) add(s, false);
   for (const s of coll) add(s, true);
+  // Essayfag: hvert sett har bare fem spørsmål fra et stort pensum, så et tema er sjelden med i de
+  // fleste settene. Terskelene er lavere, og pensumtemaer som ikke er spurt om ennå, er med til slutt.
+  const essay = exams.length > 0 && exams.every((d) => d.layout === 'essay');
+  if (essay && [...byKb.keys()].some((k) => getFamily(k)?.domain === 'org'))
+    for (const t of ORG_TOPICS) if (!byKb.has(t.id)) byKb.set(t.id, { sets: new Set(), q: 0, c: 0, formats: new Set(), parts: new Set() });
   const fewSets = exams.length < 3;
   // Med få sett sier «på 1 av 1 sett» lite; da rangeres temaene etter hvor mange spørsmål de har.
   const maxQ = Math.max(1, ...[...byKb.values()].map((v) => v.q + v.c * 0.25));
@@ -81,7 +87,9 @@ export function topicStats(): TopicStat[] {
   for (const [kbId, v] of byKb) {
     const fam = getFamily(kbId)!;
     const share = !fewSets ? v.sets.size / exams.length : (v.q + v.c * 0.25) / maxQ;
-    const relevance: TopicStat['relevance'] = !fewSets
+    const relevance: TopicStat['relevance'] = essay && !fewSets
+      ? share >= 0.4 ? 'svært høy' : share >= 0.3 ? 'høy' : share >= 0.2 ? 'middels' : 'lav'
+      : !fewSets
       ? share >= 0.75 ? 'svært høy' : share >= 0.45 ? 'høy' : share >= 0.2 ? 'middels' : 'lav'
       : !v.q ? 'lav' : share >= 0.6 ? 'svært høy' : share >= 0.3 ? 'høy' : 'middels';
     // Vekten er bare eksamenshyppighet (ikke studentens svar), så rekkefølgen står stille mens du øver.
@@ -141,7 +149,15 @@ const PREREQ_FIRST: Record<string, string[]> = {
 export function chapters(): Chapter[] {
   const list = ordered(topicStats());
   const few = (list[0]?.sets ?? 0) < 3;
-  const tiers: { key: string; title: string; subtitle: string; tier: TopicStat['relevance'] }[] = few
+  const essay = list.length > 0 && list.every((t) => t.fam.domain === 'org');
+  const tiers: { key: string; title: string; subtitle: string; tier: TopicStat['relevance'] }[] = essay && !few
+    ? [
+        { key: 'a', title: 'Kommer oftest', subtitle: 'Med i omtrent annethvert eksamenssett. Start her.', tier: 'svært høy' },
+        { key: 'b', title: 'Kommer ofte', subtitle: 'Med i omtrent hvert tredje sett.', tier: 'høy' },
+        { key: 'c', title: 'Har kommet flere ganger', subtitle: 'Med i to av settene dine.', tier: 'middels' },
+        { key: 'd', title: 'Sjelden eller ikke ennå', subtitle: 'Bare i ett sett, eller i pensum uten å ha vært spurt om. Ta disse sist.', tier: 'lav' },
+      ]
+    : few
     ? [
         { key: 'a', title: 'Mest på eksamen', subtitle: 'Flest spørsmål i eksamenssettet ditt. Start her.', tier: 'svært høy' },
         { key: 'b', title: 'En god del på eksamen', subtitle: 'Færre spørsmål, men de kommer.', tier: 'høy' },
@@ -205,6 +221,7 @@ export function chapterState(ch: Chapter) {
 
 export function relevanceText(t: TopicStat): string {
   const coll = t.collection ? ` · ${t.collection} i oppgavesamlingen` : '';
+  if (!t.questions && !t.collection && t.fam.domain === 'org') return 'I pensum, ikke spurt om i eksamenene dine ennå';
   if (t.sets >= 3) return `På ${t.inSets} av ${t.sets} eksamenssett${t.questions ? ` · ${t.questions} spørsmål` : ''}${coll}`;
   if (t.questions) return `${t.questions} spørsmål i ${t.sets === 1 ? 'eksamenssettet ditt' : 'eksamenssettene dine'}${coll}`;
   return t.collection ? `${t.collection} oppgaver i oppgavesamlingen` : 'Grunnlag for andre temaer';
@@ -216,6 +233,7 @@ export function relevanceBar(t: TopicStat): number {
 }
 
 export function formatText(t: TopicStat): string {
+  if (t.fam.domain === 'org') return t.questions ? 'Kommer som essayspørsmål (ca. 36 min)' : '';
   const f = t.formats.map((x) => (x === 'flervalg' ? 'flervalg' : x === 'kortsvar' ? 'kortsvar' : x === 'langsvar' ? 'lengre oppgave' : 'regneoppgave'));
   const parts = t.parts.length ? ` (Del ${t.parts.join(', ')})` : '';
   return f.length ? `Kommer som ${[...new Set(f)].join(', ')}${parts}` : '';

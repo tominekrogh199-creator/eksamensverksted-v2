@@ -2,7 +2,7 @@
 // (hver gang du får poeng), så «siste skriving vinner» ville viske ut det den andre
 // enheten gjorde. Her tas det beste fra begge, felt for felt.
 
-import type { GameRec } from '../domain/types';
+import type { GameRec, FlashRec } from '../domain/types';
 
 const max = (a?: number, b?: number) => (a === undefined ? b : b === undefined ? a : Math.max(a, b));
 const later = (a?: string, b?: string) => (!a ? b : !b ? a : a > b ? a : b);
@@ -57,4 +57,18 @@ export function mergeGame(local: GameRec, remote: GameRec): GameRec {
 export function sameGame(a: GameRec, b: GameRec): boolean {
   const strip = (g: GameRec) => JSON.stringify({ ...g, updatedAt: '', createdAt: '' });
   return strip(a) === strip(b);
+}
+
+/** Flashcards: for hvert kort vinner det som ble øvd sist. */
+export function mergeFlash(local: FlashRec, remote: FlashRec): FlashRec {
+  const cards: FlashRec['cards'] = { ...remote.cards };
+  for (const [k, l] of Object.entries(local.cards)) {
+    const r = cards[k];
+    if (!r || l.l >= r.l) cards[k] = l;
+  }
+  return { ...local, cards };
+}
+
+export function sameFlash(a: FlashRec, b: FlashRec): boolean {
+  return JSON.stringify(a.cards) === JSON.stringify(b.cards);
 }

@@ -5,9 +5,10 @@ import { kostnad } from './kostnad';
 import { wsps, disiplin } from './sok-arbeid';
 import { arbeidFritid, alternativkostnad, markedKvalitativ, teknologi, prinsipalAgent, kapitalisme } from './sok-mikro';
 import { makro, konjunktur } from './sok-makro';
-import type { FamilyKB, TemplateDef, FormulaDef } from './common';
+import type { FamilyKB, TemplateDef, FormulaDef, Domain } from './common';
+import { ORG_FAMILIES, ORG_RELATED } from './org';
 
-export const FAMILIES: FamilyKB[] = [likevekt, avgift, prosent, kostnad, wsps, disiplin, arbeidFritid, markedKvalitativ, alternativkostnad, teknologi, prinsipalAgent, makro, konjunktur, kapitalisme, ...ELEKTRO_FAMILIES, ...DIGITAL_FAMILIES];
+export const FAMILIES: FamilyKB[] = [likevekt, avgift, prosent, kostnad, wsps, disiplin, arbeidFritid, markedKvalitativ, alternativkostnad, teknologi, prinsipalAgent, makro, konjunktur, kapitalisme, ...ELEKTRO_FAMILIES, ...DIGITAL_FAMILIES, ...ORG_FAMILIES];
 
 import { ELEKTRO_FAMILIES } from './el-kretser';
 import { DIGITAL_FAMILIES } from './el-digital';
@@ -56,9 +57,10 @@ export const RELATED: Record<string, string[]> = {
   'dig-tall': ['dig-sekvensiell'],
   'dig-logikk': ['dig-sekvensiell'],
   'dig-sekvensiell': ['dig-logikk', 'dig-tall'],
+  ...ORG_RELATED,
 };
 
-export function domainOf(f: FamilyKB | undefined): 'økonomi' | 'elektro' | 'digital' {
+export function domainOf(f: FamilyKB | undefined): Domain {
   return f?.domain ?? 'økonomi';
 }
 
@@ -69,7 +71,7 @@ export function familiesFor(presentIds: Iterable<string | undefined>): FamilyKB[
   return FAMILIES.filter((f) => domains.has(domainOf(f)));
 }
 
-export type { FamilyKB, TemplateDef, FormulaDef };
+export type { FamilyKB, TemplateDef, FormulaDef, Domain };
 
 /** Familiens korte forklaring. Noen forklaringer bruker oppgavens tall; mangler de, brukes en generell tekst. */
 export function familyShort(f: FamilyKB | undefined, params: Record<string, string> = {}): { text: string; example: string } {

@@ -90,7 +90,7 @@ async function boot() {
   const courses = store.courses();
   const active = s?.activeCourseId && courses.some((c) => c.id === s.activeCourseId) ? s.activeCourseId : courses[0]?.id;
   const hash = (location.hash || '').replace('#', '');
-  const valid: Route['name'][] = ['start', 'arkiv', 'kart', 'tren', 'formel', 'utvikling', 'eksamen', 'innstillinger', 'status', 'ommeg'];
+  const valid: Route['name'][] = ['start', 'arkiv', 'kart', 'tren', 'formel', 'utvikling', 'eksamen', 'innstillinger', 'status', 'ommeg', 'kort', 'modeller'];
   store.setUi({ activeCourseId: active, ready: true, route: active ? { name: valid.includes(hash as Route['name']) ? (hash as 'start') : 'start' } : { name: 'velkommen' } });
   if (replayed) store.toast(`${replayed} endring${replayed === 1 ? '' : 'er'} som ikke rakk å bli lagret sist, er lagret nå.`, 'info');
   // Rester av dokumenter som ble slettet midt i analysen, ryddes stille bort.

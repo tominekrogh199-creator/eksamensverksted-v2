@@ -13,10 +13,11 @@ export function splitMarks(text: string): { hl: number; s: string }[] {
   let i = 0;
   let plain = '';
   while (i < text.length) {
-    const m = /^\{\{([1-4]):/.exec(text.slice(i, i + 5));
+    const m = /^\{\{([1-4]):/.exec(text.slice(i, i + 4));
     if (m) {
+      // «{{1:» er fire tegn; innholdet starter rett etter kolonet.
       let depth = 0;
-      let j = i + 5;
+      let j = i + 4;
       for (; j < text.length; j++) {
         if (text[j] === '{') depth++;
         else if (text[j] === '}') {
@@ -27,7 +28,7 @@ export function splitMarks(text: string): { hl: number; s: string }[] {
       if (j < text.length) {
         if (plain) out.push({ hl: 0, s: plain });
         plain = '';
-        out.push({ hl: Number(m[1]), s: text.slice(i + 5, j) });
+        out.push({ hl: Number(m[1]), s: text.slice(i + 4, j) });
         i = j + 2;
         continue;
       }

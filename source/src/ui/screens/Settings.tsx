@@ -1,12 +1,14 @@
 // Innstillinger: eksamensopplysninger, fag, lagring, AI, personvern og sletting.
 
 import { useState } from 'react';
-import type { Course, SourceDoc, Attempt } from '../../domain/types';
+import type { Course, SourceDoc, Attempt, GameRec } from '../../domain/types';
 import { nowIso } from '../../domain/types';
 import { store, useStore } from '../../state/store';
 import { createCourse } from '../../analysis/pipeline';
 import { blobs } from '../../storage/backend';
 import { offerDownload } from '../../storage/platform';
+import { cleanupCandidates, runCleanup, entityCount, DOC_LIMIT } from '../../storage/cleanup';
+import { GAME_ID } from '../../learning/game';
 import { ConfirmButton, Notice, Pill } from '../components/common';
 import { Icon } from '../components/Icon';
 
@@ -41,9 +43,17 @@ function SettingsForm() {
   };
   const deleteHistory = async () => {
     await removePhotos();
-    for (const k of ['attempt', 'evidence', 'session', 'exam'] as const) for (const e of store.list(k, course.id)) store.remove(e);
-    store.toast('Forsøk, bilder, mestringshistorikk og prøver for faget er slettet.', 'ok');
+    // Alt som bygger på det du har gjort: forsøk, evidens, økter, prøver, flashcard-fremgang og genererte oppgaver.
+    for (const k of ['attempt', 'evidence', 'session', 'exam', 'flash', 'gen'] as const) for (const e of store.list(k, course.id)) store.remove(e);
+    // Fremgangen i eksamensplanen (Lær, quiz, løste oppgaver, rekorder) for faget nullstilles; poengene beholdes.
+    const g = store.get<GameRec>('game', GAME_ID);
+    if (g) {
+      const pre = `${course.id}:`;
+      store.upsert({ ...g, topics: Object.fromEntries(Object.entries(g.topics).filter(([k]) => !k.startsWith(pre))), chapters: Object.fromEntries(Object.entries(g.chapters).filter(([k]) => !k.startsWith(pre))) });
+    }
+    store.toast('Forsøk, bilder, mestring, prøver, flashcards og fremgangen i planen for faget er slettet. Poengene dine beholdes.', 'ok');
   };
+  const [cleanup, setCleanup] = useState<ReturnType<typeof cleanupCandidates> | null>(null);
   const deleteCourse = async () => {
     await removePhotos();
     for (const d of store.docs(course.id)) if (store.platform) await blobs.remove(store.platform, { localKey: d.storage.localKey ?? d.id, assetId: d.storage.assetId });
@@ -184,6 +194,49 @@ function SettingsForm() {
           </div>
         ) : null}
         {ui.writeError ? <Notice tone="red">{ui.writeError}</Notice> : null}
+        {ui.storageKind === 'sky' ? (
+          <div className="stack sm">
+            <span className="small">
+              Elementer lagret av deg: <strong>{entityCount()}</strong>. Appens database har en grense på {DOC_LIMIT} elementer totalt.
+            </span>
+            {ui.storageFull ? <Notice tone="red">Lagringen tar ikke imot flere endringer. Rydd opp under, eller slett et fag du ikke bruker.</Notice> : null}
+            {cleanup ? (
+              cleanup.items.length ? (
+                <div className="stack sm">
+                  <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+                    {cleanup.summary.map((x) => (
+                      <li key={x}>{x}</li>
+                    ))}
+                  </ul>
+                  <div className="row">
+                    <ConfirmButton
+                      confirmText={`Slette ${cleanup.items.length} elementer som ikke brukes? Ingenting du har levert, slettes.`}
+                      onConfirm={() => {
+                        const n = runCleanup(cleanup.items);
+                        setCleanup(null);
+                        store.setUi({ storageFull: false });
+                        store.toast(`${n} elementer ryddet bort.`, 'ok');
+                      }}
+                    >
+                      Rydd opp ({cleanup.items.length})
+                    </ConfirmButton>
+                    <button className="btn ghost small" onClick={() => setCleanup(null)}>
+                      Avbryt
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="small muted">Ingenting å rydde: alt som er lagret, er i bruk.</p>
+              )
+            ) : (
+              <div>
+                <button className="btn small" onClick={() => setCleanup(cleanupCandidates())}>
+                  Finn ubrukte elementer
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
       </section>
       <section className="card stack">
         <h3>AI</h3>

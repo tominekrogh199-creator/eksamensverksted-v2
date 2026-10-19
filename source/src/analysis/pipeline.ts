@@ -14,6 +14,7 @@ import { extractPdf, renderPdfPage, renderPdfCanvas } from '../ingest/pdf';
 import { ocrCanvas, ocrAvailable, refineFigureBoxes } from '../ingest/ocr';
 import { segmentBi, looksLikeBi } from './segment-bi';
 import { segmentOppg, looksLikeOppg, type OSegmentation } from './segment-oppg';
+import { segmentEssay, looksLikeEssay, essaySetSimilarity, type EssaySegmentation } from './segment-essay';
 import { officialFromGuide } from './guide';
 import { extractDocx } from '../ingest/docx';
 import { guessMeta, isDemoDocument } from '../ingest/meta';
@@ -225,15 +226,22 @@ export async function processQueue(): Promise<void> {
 async function runDoc(id: string) {
   let d = store.get<SourceDoc>('doc', id)!;
   store.setBusy('pipeline', `Behandler ${d.fileName}`);
+  // Dokumentet kan slettes mens et trinn venter (lesing, AI). Da stopper vi, og ryddingen tar restene.
+  const gone = () => !store.get<SourceDoc>('doc', id);
   if (d.stages.sidelesing.status !== 'ferdig') await stageRead(id);
+  if (gone()) return removeOrphans(id);
   d = store.get<SourceDoc>('doc', id)!;
   if (d.stages.bildelesing.status === 'venter' || d.stages.bildelesing.status === 'pågår') await stageVisual(id);
+  if (gone()) return removeOrphans(id);
   d = store.get<SourceDoc>('doc', id)!;
   applyMetaGuess(id);
   d = store.get<SourceDoc>('doc', id)!;
   if (d.stages.segmentering.status === 'venter' || d.stages.segmentering.status === 'pågår') await stageSegment(id);
+  if (gone()) return removeOrphans(id);
   d = store.get<SourceDoc>('doc', id)!;
+  if (d.status === 'duplikat') return;
   if (d.stages.analyse.status === 'venter' || d.stages.analyse.status === 'pågår') await stageAnalyze(id);
+  if (gone()) return removeOrphans(id);
   d = store.get<SourceDoc>('doc', id)!;
   if (d.stages.kobling.status === 'venter' || d.stages.kobling.status === 'pågår') {
     setStage(id, 'kobling', { status: 'pågår' });
@@ -242,6 +250,12 @@ async function runDoc(id: string) {
     else setStage(id, 'kobling', { status: 'hoppet-over', note: 'Gjelder bare veiledninger og løsningsforslag' });
   }
   stageCoverage(id);
+}
+
+/** Sider og deloppgaver som ble lagret etter at dokumentet ble slettet. */
+function removeOrphans(id: string) {
+  for (const p of store.list<PageRec>('page').filter((x) => x.docId === id)) store.remove(p);
+  for (const s of store.list<SubTask>('subtask').filter((x) => x.docId === id)) store.remove(s);
 }
 
 async function stageRead(id: string) {
@@ -548,6 +562,14 @@ async function stageSegment(id: string) {
   setStage(id, 'segmentering', { status: 'pågår' });
   const pages = store.pages(id).filter((p) => p.docVersion === d.version);
   const input = pages.map((p) => ({ pdfPage: p.pdfPage, text: p.text, hasFigure: p.hasFigure, printedPage: p.printedPage, lines: p.lines }));
+  // Fem likeverdige tekstoppgaver («Besvar følgende oppgaver: 1. … 5.»), eller en veiledning med «Relevant pensum» per spørsmål.
+  if (['eksamen', 'sensorveiledning'].includes(d.meta.docType) && looksLikeEssay(input)) {
+    const es = segmentEssay(input);
+    if (es.items.length >= 2) {
+      segmentEssayDoc(d, pages, es);
+      return;
+    }
+  }
   if (['eksamen', 'sensorveiledning', 'losningsforslag'].includes(d.meta.docType) && looksLikeBi(input)) {
     const bi = segmentBi(pages.map((p) => ({ pdfPage: p.pdfPage, text: p.text, lines: p.lines, figureBoxes: p.figureBoxes, hasFigure: p.hasFigure })));
     if (bi.items.length >= 2) {
@@ -667,6 +689,125 @@ async function stageSegment(id: string) {
     status: items.length ? 'ferdig' : 'trenger-hjelp',
     note: items.length ? `${seg.tasks.length || new Set(items.map((i) => i.taskNo)).size} oppgaver, ${items.length} deloppgaver${aiSeg ? ' (AI-segmentert, kontroller mot originalen)' : ''}` : 'Fant ingen oppgaver. Kontroller at teksten er lest, eller merk dokumenttypen.',
   });
+}
+
+/**
+ * Tekstoppgaver (eksamen) eller veiledning med spørsmålene og pensumhenvisninger.
+ * Veiledningen står alene som sett (den har spørsmålene ordrett). Eksamensoppgaven
+ * til samme sett regnes som duplikat av veiledningen (se mergeEssaySets).
+ */
+function segmentEssayDoc(d: SourceDoc, pages: PageRec[], es: EssaySegmentation) {
+  const now = nowIso();
+  const keep = new Set<string>();
+  const isGuide = es.kind === 'veiledning';
+  for (const it of es.items) {
+    const sid = stableSubId(d, it.label);
+    keep.add(sid);
+    const prev = store.get<SubTask>('subtask', sid);
+    const userEdited = prev?.textHistory.some((h) => h.by === 'bruker');
+    const pagesUsed = it.pages.length ? it.pages : [pages[0]?.pdfPage ?? 1];
+    const st: SubTask = {
+      id: sid,
+      kind: 'subtask',
+      courseId: d.courseId,
+      createdAt: prev?.createdAt ?? now,
+      updatedAt: now,
+      demo: d.demo,
+      docId: d.id,
+      docVersion: d.version,
+      taskNo: it.no,
+      sub: '',
+      label: it.label,
+      format: 'langsvar',
+      pages: pagesUsed,
+      printedPages: pagesUsed.map((n) => pages.find((p) => p.pdfPage === n)?.printedPage ?? ''),
+      intro: '',
+      text: userEdited ? prev!.text : it.text,
+      textVersion: prev?.textVersion ?? 1,
+      textHistory: prev?.textHistory ?? [],
+      figures: [],
+      dependsOn: [],
+      ...(isGuide && it.guide ? { guide: { text: it.guide, lines: it.guideLines.map((l) => ({ page: l.page, text: l.text, box: l.box })) } } : {}),
+      analysis: prev?.analysis ?? ({} as SubtaskAnalysis),
+      seg: { subtaskCount: 1, taskWeightPct: es.equalWeight || isGuide ? Math.round(100 / es.items.length) : undefined, lineBoxes: it.lines.filter((l) => l.box).map((l) => ({ page: l.page, box: l.box! })) },
+    };
+    store.upsert(st, { silent: true });
+  }
+  for (const old of store.subtasks(d.courseId)) if (old.docId === d.id && old.docVersion === d.version && !keep.has(old.id)) store.remove(old);
+  for (const p of pages) {
+    const refs = es.items.filter((i) => i.pages.includes(p.pdfPage)).map((i) => stableSubId(d, i.label));
+    let status: PageStatus = p.status;
+    let statusNote = p.statusNote;
+    if (!refs.length && (p.status === 'lest' || p.status === 'ocr-lest' || p.status === 'ai-lest')) {
+      status = 'irrelevant';
+      statusNote = isGuide ? 'Generelle kriterier og læringsmål (gjelder alle spørsmålene).' : 'Forside eller instruksjoner (ingen oppgaver).';
+    }
+    store.upsert({ ...p, taskRefs: refs, status, statusNote }, { silent: true });
+  }
+  store.bump();
+  const course = store.get<Course>('course', d.courseId);
+  // Eksamensopplysninger (tid og hjelpemidler) fra eksamensoppgaven, når faget ikke har dem.
+  if (course && !isGuide && (es.minutes || es.aids) && !course.examInfo.durationMin) {
+    store.upsert({ ...course, examInfo: { ...course.examInfo, durationMin: es.minutes ?? course.examInfo.durationMin, aids: course.examInfo.aids ?? es.aids, format: course.examInfo.format ?? `${es.items.length} tekstoppgaver som teller likt` } });
+  }
+  const notes = [...(store.get<SourceDoc>('doc', d.id)!.notes ?? []).filter((n) => !n.startsWith('Format:')), `Format: ${es.items.length} tekstoppgaver${es.equalWeight || isGuide ? ' som teller likt' : ''}${es.minutes ? `, ${es.minutes / 60} timer` : ''}${es.aids ? `, ${es.aids.toLowerCase()}` : ''}.`];
+  patchDoc(d.id, { layout: 'essay', selfContained: isGuide, essayCriteria: isGuide ? es.criteria : undefined, curriculum: es.curriculum.length ? es.curriculum : undefined, language: es.language, notes, equalSubWeights: es.equalWeight || isGuide, guide: undefined, linkedExamDocId: undefined });
+  setStage(d.id, 'segmentering', { status: 'ferdig', note: `${es.items.length} ${isGuide ? 'spørsmål med pensumhenvisning' : 'tekstoppgaver'}${isGuide && es.criteria.length ? ` og ${es.criteria.length} generelle vurderingskriterier` : ''}.` });
+  setStage(d.id, 'analyse', { status: 'venter' });
+  mergeEssaySets(d.courseId);
+}
+
+/**
+ * Samme sett i flere filer: eksamensoppgaven og veiledningen (som har spørsmålene og
+ * pensumhenvisningene), og nynorsk-versjonen. Bare én av dem telles som sett.
+ */
+export function mergeEssaySets(courseId: string) {
+  const docs = store.docs(courseId).filter((x) => x.layout === 'essay' && x.status !== 'duplikat' && !x.supersededBy && x.stages.segmentering.status === 'ferdig');
+  const qs = new Map(docs.map((x) => [x.id, store.subtasks(courseId).filter((s) => s.docId === x.id && s.docVersion === x.version).sort((a, b) => a.taskNo - b.taskNo).map((s) => s.text)]));
+  const slotOf = (x: SourceDoc) => /slot (\d)/i.exec(x.meta.setLabel ?? '')?.[1];
+  const sameTime = (a: SourceDoc, b: SourceDoc) => {
+    if (!a.meta.year || !b.meta.year) return true;
+    if (a.meta.year !== b.meta.year || a.meta.term !== b.meta.term) return false;
+    const sa = slotOf(a);
+    const sb = slotOf(b);
+    return !sa || !sb || sa === sb;
+  };
+  const markDup = (dup: SourceDoc, of: SourceDoc, why: string) => {
+    store.upsert({ ...dup, status: 'duplikat', duplicateOf: of.id, notes: [...(dup.notes ?? []).filter((n) => !n.startsWith('Samme sett')), `Samme sett som «${of.meta.setLabel ?? of.fileName}»: ${why} Den telles ikke som et eget sett.`], stages: { ...dup.stages, analyse: { status: 'hoppet-over', note: 'Samme sett som et annet dokument' }, kobling: { status: 'hoppet-over', note: 'Samme sett som et annet dokument' }, dekning: { status: 'hoppet-over' } } });
+    for (const s of store.subtasks(courseId).filter((x) => x.docId === dup.id)) store.remove(s);
+  };
+  const canonical = (x: SourceDoc) => (x.selfContained ? 2 : 0) + (x.language === 'nn' ? -1 : 0) + (x.meta.year ? 0.5 : 0);
+  for (const a of docs) {
+    const cur = store.get<SourceDoc>('doc', a.id)!;
+    if (cur.status === 'duplikat') continue;
+    for (const b of docs) {
+      if (a.id === b.id) continue;
+      const bb = store.get<SourceDoc>('doc', b.id)!;
+      if (bb.status === 'duplikat' || !sameTime(cur, bb)) continue;
+      const qa = qs.get(a.id) ?? [];
+      const qb = qs.get(b.id) ?? [];
+      const sim = essaySetSimilarity(qa, qb);
+      const nynorsk = cur.language !== bb.language && qa.length === qb.length && !!cur.meta.year && !!bb.meta.year && slotOf(cur) === slotOf(bb);
+      if (sim < 0.95 && !nynorsk) continue;
+      // Behold veiledningen (spørsmål + pensum) foran eksamensoppgaven, og bokmål foran nynorsk.
+      const [keepDoc, dropDoc] = canonical(cur) >= canonical(bb) ? [cur, bb] : [bb, cur];
+      markDup(dropDoc, keepDoc, nynorsk && sim < 0.95 ? 'nynorsk-versjonen av samme eksamen.' : keepDoc.selfContained ? 'spørsmålene står ordrett i sensorveiledningen, som også har pensumhenvisningene.' : 'de samme spørsmålene.');
+      if (dropDoc.id === cur.id) break;
+    }
+  }
+  // Konte-eksamener gjenbruker ofte spørsmål. Ligner teksten mye på et sett fra en annen dato,
+  // er det likevel en egen eksamen: avklar det automatisk i stedet for å spørre.
+  for (const x of store.docs(courseId)) {
+    if (x.layout !== 'essay' || x.status === 'duplikat' || !x.similarTo || x.similarTo.resolved) continue;
+    const o = store.get<SourceDoc>('doc', x.similarTo.docId);
+    if (!o || o.layout !== 'essay' || !x.meta.year || !o.meta.year || sameTime(x, o)) continue;
+    store.upsert({
+      ...x,
+      similarTo: { ...x.similarTo, resolved: 'eget' },
+      notes: [...(x.notes ?? []).filter((n) => !n.startsWith('Innholdet ligner svært')), `Flere spørsmål går igjen fra «${o.meta.setLabel ?? o.fileName}», men dette er en annen eksamen (${x.meta.setLabel ?? ''}). Den telles som eget sett.`],
+    });
+  }
+  store.bump();
 }
 
 /** Dokument med både spørsmål og sensorveiledning (BI-format): hvert spørsmål blir en deloppgave med egne offisielle kriterier. */
@@ -840,6 +981,14 @@ function ruleAnalyze(st: SubTask, d: SourceDoc, siblings: SubTask[], domains?: s
     if (st.solutionRegions?.length) own.push({ id: `lf-${st.id}-utsnitt`, text: 'Hele løsningsforslaget står i dokumentet og vises som utsnitt av originalen.', basis: 'offisielt' as const, source: { ...src, quote: 'Løsning' } });
     r.analysis.criteria = [...r.analysis.criteria.filter((c) => c.basis !== 'offisielt'), ...own];
     r.analysis.computed = undefined;
+  } else if (d.layout === 'essay') {
+    // Tekstoppgaver: veiledningens generelle kriterier gjelder alle spørsmålene, pensumhenvisningen dette spørsmålet.
+    const src = (page: number, quote: string) => ({ docId: d.id, docVersion: d.version, pdfPage: page, quote: quote.slice(0, 200), taskLabel: st.label });
+    const general = (d.essayCriteria ?? []).map((c, i) => ({ id: `ess-${d.id}-${st.label}-${i}`, text: c.text, basis: 'offisielt' as const, source: src(c.page, c.quote) }));
+    const own = st.guide?.text ? officialFromGuide(d, st.label, st.guide.lines.length ? st.guide.lines : [{ page: st.pages[0], text: st.guide.text }]) : [];
+    r.analysis.criteria = [...r.analysis.criteria.filter((c) => c.basis !== 'offisielt'), ...own, ...general];
+    r.analysis.computed = undefined;
+    if (own.length || general.length) r.analysis.certainty.basis = `${r.analysis.certainty.basis} Veiledningen gir pensumhenvisning og ${general.length} generelle kriterier.`.trim();
   } else if (st.guide?.text) {
     // Veiledning i samme dokument: offisielle kriterier per spørsmål.
     const own = officialFromGuide(d, st.label, st.guide.lines);
@@ -1019,6 +1168,8 @@ export function confirmGuideLink(guideId: string, examId: string) {
 
 function stageCoverage(id: string) {
   const d = store.get<SourceDoc>('doc', id)!;
+  // Duplikater (f.eks. eksamensoppgaven når veiledningen har de samme spørsmålene) skal ikke be om hjelp.
+  if (d.status === 'duplikat' || d.status === 'erstattet') return;
   const pages = store.pages(id).filter((p) => p.docVersion === d.version);
   const counts: Record<string, number> = {};
   for (const p of pages) counts[p.status] = (counts[p.status] ?? 0) + 1;
@@ -1178,8 +1329,26 @@ export async function deleteDocument(docId: string) {
   for (const s of store.subtasks(d.courseId).filter((x) => x.docId === docId)) store.remove(s);
   if (d.status !== 'duplikat' && store.platform) await blobs.remove(store.platform, blobRef(d));
   store.remove(d);
+  // Slettes en ny versjon, blir forrige versjon den gjeldende igjen.
+  const prev = d.previousVersionId ? store.get<SourceDoc>('doc', d.previousVersionId) : undefined;
+  if (prev && prev.supersededBy === d.id) {
+    const needsHelp = STAGE_ORDER.some((st) => prev.stages[st].status === 'trenger-hjelp' || prev.stages[st].status === 'feil');
+    store.upsert({ ...prev, supersededBy: undefined, status: needsHelp ? 'trenger-hjelp' : 'ferdig' });
+    store.toast(`Forrige versjon av «${prev.fileName}» gjelder igjen.`, 'info');
+  }
+  // Dokumenter som var merket som samme sett som dette, analyseres på nytt (nå er de ikke lenger dekket).
+  let requeue = false;
+  for (const o of store.docs(d.courseId)) {
+    if (o.status !== 'duplikat' || o.duplicateOf !== d.id) continue;
+    const stages = { ...o.stages };
+    const from = o.stages.sidelesing.status === 'ferdig' ? STAGE_ORDER.indexOf('segmentering') : STAGE_ORDER.indexOf('sidelesing');
+    for (const st of STAGE_ORDER.slice(from)) stages[st] = { status: 'venter', note: 'Analyseres på nytt fordi dokumentet det var en kopi av, er slettet' };
+    store.upsert({ ...o, status: 'behandles', duplicateOf: undefined, stages });
+    requeue = true;
+  }
   relinkGuides(d.courseId);
   void refreshFamilies(d.courseId);
+  if (requeue) void processQueue();
 }
 
 /** Dokumenter behandlet med en eldre versjon av kjeden analyseres på nytt (originalen må finnes på enheten). */

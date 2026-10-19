@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import type { Attempt, GeneratedTask, ExamSim } from '../../domain/types';
 import { store, useStore } from '../../state/store';
 import { getFamily } from '../../families';
+import { ORG_TOPIC_MAP } from '../../families/org';
 import { chapters, chapterState, nextStep, topicProgress, relevanceText, relevanceBar, formatText, type TopicStat, type Chapter } from '../../learning/path';
 import { topicQuestions, cachedLesson } from '../../learning/lesson';
 import { profile } from '../../learning/game';
@@ -228,6 +229,11 @@ function TopicRow({ t, rank, isNext, onOpen, setBusy, busy }: { t: TopicStat; ra
         <button className={`btn small${p.lessonDone && p.level < 3 ? ' primary' : ''}`} disabled={busy} onClick={() => void startTopicPractice(t.kbId, setBusy)}>
           <Icon name="pencil" size={15} /> Oppgaver
         </button>
+        {ORG_TOPIC_MAP[t.kbId] ? (
+          <button className="btn small ghost" onClick={() => store.navigate({ name: 'kort', topic: t.kbId })} title="Flashcards med begrepene og modellene i temaet">
+            <Icon name="layers" size={15} /> Kort
+          </button>
+        ) : null}
       </div>
     </li>
   );
@@ -242,8 +248,9 @@ function TopicSheet({ kbId, onClose }: { kbId: string; onClose: () => void }) {
   if (!t) return null;
   const o = practiceOptions(kbId);
   const qs = topicQuestions(kbId).length;
+  const org = ORG_TOPIC_MAP[kbId];
   const steps: [string, boolean, string][] = [
-    ['Lær', p.lessonDone, p.lessonDone ? 'Fullført' : 'Formlene, kalkulatoren og hvordan spørsmålet ser ut på eksamen'],
+    ['Lær', p.lessonDone, p.lessonDone ? 'Fullført' : org ? 'Begrepene, modellene, eksempler fra arbeidslivet og svarstrukturen' : 'Formlene, kalkulatoren og hvordan spørsmålet ser ut på eksamen'],
     ['Quiz', (p.quizMax ?? 0) > 0 && (p.quizBest ?? 0) / (p.quizMax ?? 1) >= 0.75, p.quizMax ? `Beste: ${p.quizBest ?? 0} av ${p.quizMax} (3 av 4 er bestått)` : 'Valgfri, på slutten av Lær'],
     ['Oppgaver', p.solved >= 2, `Løst helt selv: ${p.solved} av 2${p.attempted ? ` · ${p.attempted} levert` : ''}`],
     ['Sikker', p.level >= 4, `${p.indepSkills} av ${p.coreSkills} kjerneferdigheter vist uten hjelp`],
@@ -290,6 +297,18 @@ function TopicSheet({ kbId, onClose }: { kbId: string; onClose: () => void }) {
             <button className="btn ghost" onClick={() => store.navigate({ name: 'laer', kbId, part: 'quiz' })}>
               <Icon name="target" size={16} /> Ta quizen igjen
             </button>
+          ) : null}
+          {org ? (
+            <>
+              <button className="btn ghost" onClick={() => store.navigate({ name: 'kort', topic: kbId })}>
+                <Icon name="layers" size={16} /> Flashcards for temaet
+              </button>
+              {org.models.length ? (
+                <button className="btn ghost" onClick={() => store.navigate({ name: 'modeller', modelId: org.models[0] })}>
+                  <Icon name="grid" size={16} /> Modellene i temaet ({org.models.length})
+                </button>
+              ) : null}
+            </>
           ) : null}
           {t.fam.formulas[0] ? (
             <button className="btn ghost" onClick={() => store.navigate({ name: 'formel', formulaId: t.fam.formulas[0].id })}>

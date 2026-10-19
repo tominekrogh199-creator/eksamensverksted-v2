@@ -43,7 +43,7 @@ const ROWS: { area: string; items: [string, S, string][] }[] = [
       ['Figurer, tabeller og formler', 'ai', 'Figurer finnes og vises som utsnitt fra originalen ved riktig oppgave, uten AI. Å tolke hva figuren viser (kurver, punkter, tall) krever AI.'],
       ['Oppgaver, deloppgaver, innledning, figurer og avhengigheter', 'fungerer', 'Regelbasert for vanlige formater. AI-segmentering som reserve.'],
       ['Kobling av sensorveiledning på innhold, ikke filnavn', 'fungerer', 'Emnekode, år/termin, oppgavenummer og tall som stemmer. Usikker kobling spør deg.'],
-      ['Strukturert analyse per deloppgave (alle felt i beskrivelsen)', 'fungerer', 'Regelbasert for 24 familier i tre fagområder: samfunnsøkonomi (14), elektriske kretser (7: grunnbegreper, motstandsnettverk, kretsanalyse, opamp, RC/RL, vekselstrøm, filtre og Bode) og digitalteknikk (3: tallsystemer, boolsk algebra og Karnaugh, vipper og tilstandsmaskiner). Hvert dokument gjenkjennes bare mot familiene i sitt eget fagområde. Regneoppgaver kontrolleres matematisk. Ukjente oppgavetyper: AI-tolkning, tydelig merket.'],
+      ['Strukturert analyse per deloppgave (alle felt i beskrivelsen)', 'fungerer', 'Regelbasert for 47 familier i fire fagområder: samfunnsøkonomi (14), elektriske kretser (7: grunnbegreper, motstandsnettverk, kretsanalyse, opamp, RC/RL, vekselstrøm, filtre og Bode), digitalteknikk (3: tallsystemer, boolsk algebra og Karnaugh, vipper og tilstandsmaskiner) og organisasjonsatferd og ledelse (23 temaer). Hvert dokument gjenkjennes bare mot familiene i sitt eget fagområde. Regneoppgaver kontrolleres matematisk. Ukjente oppgavetyper: AI-tolkning, tydelig merket.'],
       ['Dekningskontroll for alle sider og oppgaver', 'fungerer', ''],
       ['Åpne riktig originalside; PDF-side og trykt side', 'fungerer', ''],
       ['Rette feiltolket oppgavetekst uten ny opplasting', 'fungerer', 'Analysen og koblingene oppdateres; historikk beholdes.'],
@@ -66,7 +66,7 @@ const ROWS: { area: string; items: [string, S, string][] }[] = [
   {
     area: 'Oppgavegeneratoren',
     items: [
-      ['Fire variasjonsnivåer', 'fungerer', '88 maler i 24 familier: regneoppgaver, flervalg med én entydig fasit, «hvilken kurve skifter, og hvilken vei» og forklaringer med vurderingsramme. Tekniske maler bruker SI-enheter med prefiks (4 kΩ, 2,5 mA) og godtar svar innenfor en relativ toleranse.'],
+      ['Fire variasjonsnivåer', 'fungerer', '203 maler i 47 familier: regneoppgaver, flervalg med én entydig fasit, «hvilken kurve skifter, og hvilken vei» og forklaringer med vurderingsramme. Tekniske maler bruker SI-enheter med prefiks (4 kΩ, 2,5 mA) og godtar svar innenfor en relativ toleranse.'],
       ['Øve på de originale eksamensspørsmålene', 'fungerer', 'Flervalg rettes mot fasiten i kilden. Kortsvar og Del 3 vurderes mot sensorveiledningens egne punkter: med AI når det er tilgjengelig, ellers som selvvurdering. Tekniske oppgaver: sluttsvaret sjekkes mot svaret lest fra løsningsforslaget (2 % toleranse), og hele løsningen vises som utsnitt etter levering. Stemmer ikke det avleste svaret med utsnittet, gjelder utsnittet.'],
       ['Delferdigheter, gradvis fjernede steg, finn feilen', 'fungerer', ''],
       ['Valg av antall, nivå, tid og familier; ingen nesten-duplikater', 'fungerer', ''],
@@ -78,13 +78,25 @@ const ROWS: { area: string; items: [string, S, string][] }[] = [
   {
     area: 'Læringssti og Lær',
     items: [
-      ['Sti med temaene i rekkefølge etter eksamensrelevans', 'fungerer', 'Temaene som finnes i eksamenssettene dine, delt i kapitler etter hvor ofte de kommer (nesten alltid, ofte, av og til, sjelden). Hvert tema viser «på X av Y sett», formatene og fremgangen din.'],
+      ['Eksamensplan med temaene i rekkefølge etter eksamensrelevans', 'fungerer', 'Temaene som finnes i eksamenssettene dine, delt i grupper etter hvor ofte de kommer. Hvert tema viser «på X av Y sett», formatene og fremgangen din (Lær, quiz, oppgaver, sikker). I essayfag er tersklene lavere (fem spørsmål per sett fra et stort pensum), og pensumtemaer som ikke er spurt om ennå, står til slutt.'],
       ['Lær: korte leksjoner med bare det eksamen krever', 'ai', 'Med AI: først analyseres alle eksamensspørsmålene dine om temaet (med fasit og sensorveiledning), så skrives leksjonen ut fra analysen, og til slutt løser et uavhengig kall kontrollspørsmål og quiz uten fasit; spørsmål som ikke stemmer, fjernes. Uten AI: leksjon fra kunnskapsbasen med formler, gjennomregnet eksempel, feller og de ekte flervalgsspørsmålene dine. Ikke kjørt mot en ekte modell i byggemiljøet.'],
       ['Kalkulatoren på eksamen', 'fungerer', 'En simulert vanlig kalkulator (+ − × ÷ √ % = M+ M− MRC, regner fra venstre mot høyre). Appen lager tastetrykkene selv fra regneuttrykket og kjører dem i simulatoren før de vises. «Vis meg» trykker tastene én og én; «Prøv selv» viser neste tast ved behov.'],
       ['Tekst eller visuelt, fokusmodus og interesser', 'fungerer', 'Fargekodede formler og nøkkelord, steg som vises ett om gangen, kort du snur, figurer med glidebrytere. Fokusmodus gir ett kort om gangen og pustepause hvert femte kort. Interessene i «Om meg» brukes i eksemplene når en leksjon lages med AI.'],
-      ['Tutorfigur', 'fungerer', 'Ugle, rev, katt eller robot med eget navn. Egne figurer, ikke kjente maskoter.'],
+      ['Tutorfigur', 'fungerer', 'Robot (standard), rev eller katt med eget navn. Egne figurer, ikke kjente maskoter.'],
       ['Valgfri quiz, poeng, dager på rad og dagsmål', 'fungerer', 'Poengene er motivasjon og påvirker ikke mestringsbildet.'],
       ['Konkurranse per kapittel mot egen rekord', 'fungerer', '8 spørsmål på tid med fartsbonus, og et «spøkelse» som viser rekordløpet. Spørsmålene kommer fra quizene, de ekte flervalgsspørsmålene dine og kontrollerte maloppgaver.'],
+    ],
+  },
+  {
+    area: 'Begrepsfag: organisasjonsatferd og ledelse',
+    items: [
+      ['Essayeksamen med sensorveiledning', 'fungerer', 'Fem likeverdige spørsmål; spørsmålet og pensumhenvisningen skilles, og de generelle kriteriene leses (både den gamle listen og den nye tabellen). Eksamensoppgaven, nynorsk-versjonen og identiske kopier telles ikke som egne sett; en konte med gjenbrukte spørsmål telles som egen eksamen. Kjørt på 20 ekte filer: 9 sett, 45 spørsmål, alle koblet til riktig tema.'],
+      ['Kunnskapsbase', 'fungerer', '23 temaer på individ-, gruppe-, organisasjons- og ledelsesnivå med 210 begreper (definisjon og eksempel fra arbeidslivet), 40 modeller, svarstruktur, vanlige feller og hva et godt svar må få med. Skrevet av appen, ikke hentet fra lærebøkene: sjekk ordlyden mot pensum.'],
+      ['Flashcards', 'fungerer', 'Begrep → definisjon, eksempel → begrep og modell → delene, med repetisjon etter Leitner-bokser. Nye kort kommer fra temaene som er spurt om oftest. Pensumhenvisningene på kortene hentes fra sensorveiledningene dine.'],
+      ['Modellene som figurer', 'fungerer', 'Matriser, pyramider, isfjell, sirkler, trekanter, trinn, spor og grupper. Trykk på en del for forklaring og eksempel, eller skjul navnene og test deg selv.'],
+      ['Lær i essayfag', 'fungerer', 'Fra kunnskapsbasen: hvordan temaet er spurt om på eksamenene dine, begreper du snur, modellene, situasjoner fra arbeidslivet, svarstruktur for 36 minutter, feller og quiz. Med AI kommer egne eksempler (tilpasset interessene dine når det er slått på) og en svarskisse; den delen er ikke kjørt mot en ekte modell.'],
+      ['Øve på essayspørsmålene', 'ai', 'Vurderingsrammen er sensorveiledningens generelle kriterier pluss appens faglige tolkning, merket hver for seg. Svarmal med overskrifter. Med AI vurderes svaret mot rammen; uten AI vurderer du selv.'],
+      ['Nye essayspørsmål og prøveeksamen', 'ai', 'Nye spørsmål i samme stil med vurderingspunkter og modellsvar (AI). Prøveeksamen: fem spørsmål fra temaene som kommer oftest, tre timer; uten AI brukes appens egne spørsmål. Ikke kjørt mot en ekte modell.'],
     ],
   },
   {
@@ -106,7 +118,7 @@ const ROWS: { area: string; items: [string, S, string][] }[] = [
       ['Opplesing', 'fungerer', 'Nettleserens talesyntese. Norsk stemme avhenger av enheten.'],
       ['Tale til tekst', 'begrenset', 'Implementert med nettleserens talegjenkjenning, men artefaktvisningen på claude.ai blokkerer mikrofonen. Knappen viser da status i stedet.'],
       ['«Vis meg»: styrbar tavlegjennomgang', 'fungerer', 'Steg, markering, graf, teksting, tempo og detaljnivå.'],
-      ['Videofil', 'fungerer', 'WebM laget i nettleseren og bekreftet avspillbar. Teksting, ikke lyd.'],
+      ['Videofil', 'ikke', 'Fjernet i denne versjonen. Tavlegjennomgangen vises i appen; den lagres ikke som video.'],
     ],
   },
   {
