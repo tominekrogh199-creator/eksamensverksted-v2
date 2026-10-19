@@ -18,7 +18,7 @@ export interface Backend {
   remove(e: Pick<Entity, 'kind' | 'id'>): Promise<void>;
 }
 
-const KINDS: Entity['kind'][] = ['settings', 'profile', 'game', 'course', 'lesson', 'doc', 'page', 'subtask', 'family', 'gen', 'attempt', 'evidence', 'session', 'exam'];
+const KINDS: Entity['kind'][] = ['settings', 'profile', 'game', 'flash', 'course', 'lesson', 'doc', 'page', 'subtask', 'family', 'gen', 'attempt', 'evidence', 'session', 'exam'];
 
 function clean<T>(x: T): T {
   return JSON.parse(JSON.stringify(x));

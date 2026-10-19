@@ -152,6 +152,8 @@ export function guessMeta(fileName: string, text: string, info: { title?: string
   const examCode = cm ? (cm[2] ? `${cm[1]} ${cm[2]}` : cm[1]) : undefined;
   if (examCode) sug.push({ field: 'examCode', value: examCode, basis: 'avlest', why: `Fant koden ${examCode} i teksten.` });
   const pulje = /pulje\s*(\d)/i.exec(head) || /pulje[\s_-]*(\d)/i.exec(fileName);
+  // «Slot 1 / Slot 2»: to eksamener samme dag (f.eks. kl. 9 og kl. 14).
+  const slot = /\bslot\s*(?:nr\.?\s*)?(\d)\b/i.exec(head) || /slot[\s_-]*(\d)/i.exec(fileName);
   const variant = /[Ee]ksamen\s+(I{1,3}|[1-3])(?![A-Za-zÆØÅæøå])/.exec(head) || /\d{4}_\s*([1-3])_/.exec(fileName);
   const demo = /DEMO[- ]([A-C])\b/.exec(head);
   let setLabel: string | undefined;
@@ -163,6 +165,7 @@ export function guessMeta(fileName: string, text: string, info: { title?: string
   } else if (year) {
     setLabel = `${term !== 'ukjent' ? term[0].toUpperCase() + term.slice(1) + ' ' : ''}${year}${examType === 'konte' ? ' (konte)' : ''}`;
     if (pulje) setLabel += ` · pulje ${pulje[1]}`;
+    else if (slot) setLabel += ` · slot ${slot[1]}`;
     else if (variant) setLabel += ` · eksamen ${variant[1].replace('1', 'I').replace('2', 'II').replace('3', 'III')}`;
   }
   if (!setLabel && docType !== 'fagbeskrivelse') {

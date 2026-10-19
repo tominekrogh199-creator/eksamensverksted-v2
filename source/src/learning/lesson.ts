@@ -25,6 +25,7 @@ import { evaluate, planKeys } from './calculator';
 import { eng } from '../families/el-common';
 import { profile, calculatorFor } from './game';
 import { topicStats, relevanceText, formatText } from './path';
+import { isOrgTopic, orgKbLesson, orgEnrich, mergeEnrich } from './orgLesson';
 
 export const LESSON_VERSION = 2;
 
@@ -325,6 +326,8 @@ function splitTopLevel(src: string): string[] {
 
 export function kbLesson(kbId: string, prof = profile()): LessonRec {
   const fam = getFamily(kbId)!;
+  // Essayfag (organisasjon og ledelse): begreper, modeller, eksempler og svarstruktur.
+  if (isOrgTopic(kbId)) return { ...orgKbLesson(kbId, prof, topicQuestions(kbId), templateMc(fam, 7), lessonId(store.ui.activeCourseId ?? '', kbId)), version: LESSON_VERSION };
   const stat = topicStats().find((t) => t.kbId === kbId);
   const qs = topicQuestions(kbId);
   const cards: LessonCard[] = [];
@@ -719,6 +722,7 @@ async function buildLesson(kbId: string, prof: LearnerProfile, onProgress?: (n: 
   const calculator = calculatorFor(course.id);
   const fallback = () => ({ ...kbLesson(kbId, { ...prof, calculator }) });
   if (!aiAvailable()) return { lesson: fallback() };
+  if (isOrgTopic(kbId)) return buildOrgLesson(kbId, prof, fallback, onProgress);
   const stat = topicStats().find((t) => t.kbId === kbId);
   const statText = stat ? `${relevanceText(stat)}. ${formatText(stat)}.` : 'ukjent';
   const qs = sampleQuestions(kbId, 12);
@@ -789,6 +793,36 @@ async function buildLesson(kbId: string, prof: LearnerProfile, onProgress?: (n: 
     cards: built.cards,
     quiz,
     checks,
+  };
+  store.upsert(lesson);
+  return { lesson };
+}
+
+/** Essayfag: kunnskapsbase-leksjonen pluss egne eksempler og en svarskisse fra AI (kontrollert). */
+async function buildOrgLesson(kbId: string, prof: LearnerProfile, fallback: () => LessonRec, onProgress?: (n: string) => void): Promise<{ lesson: LessonRec; note?: string }> {
+  const course = store.course()!;
+  const qs = topicQuestions(kbId);
+  const base = fallback();
+  onProgress?.(`${prof.mascotName} skriver eksempler fra arbeidslivet …`);
+  const r = await orgEnrich(course.name, kbId, qs, prof);
+  if (!r.ok) return { lesson: base, note: `Leksjonen er laget fra kunnskapsbasen fordi AI ikke ga gyldige eksempler (${r.message}).` };
+  onProgress?.(`${prof.mascotName} dobbeltsjekker spørsmålene …`);
+  const ok = r.data.checks.length ? await verifyMcBatch(course.name, r.data.checks) : [];
+  const { cards, extraQuiz } = mergeEnrich(base.cards, r.data, ok ?? r.data.checks.map(() => false));
+  const now = nowIso();
+  const lesson: LessonRec = {
+    ...base,
+    createdAt: now,
+    updatedAt: now,
+    basis: 'ai',
+    personalized: prof.personalize && (prof.interests.length > 0 || !!prof.interestsNote?.trim()),
+    cards,
+    quiz: [...extraQuiz, ...base.quiz].slice(0, 5),
+    checks: [
+      ...base.checks,
+      { name: 'Eksempler og svarskisse fra AI', ok: true, detail: `${r.data.examples.length} eksempler fra arbeidslivet${r.data.sketch ? ' og en svarskisse' : ''} er skrevet av AI ut fra kunnskapsbasen. Hvert eksempel er koblet til et begrep som finnes i kunnskapsbasen.` },
+      ok ? { name: 'Fasit kontrollert', ok: true, detail: `${extraQuiz.length} av ${r.data.checks.length} AI-spørsmål ble bekreftet av en uavhengig kontroll; resten er fjernet.` } : { name: 'Fasit kontrollert', ok: false, detail: 'Kontrollen kunne ikke kjøres nå, så AI-spørsmålene er tatt ut. Quizen bruker kontrollerte maloppgaver.' },
+    ],
   };
   store.upsert(lesson);
   return { lesson };

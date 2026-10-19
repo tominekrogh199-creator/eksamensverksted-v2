@@ -12,6 +12,7 @@ import { recommend } from './recommend';
 import { HELP_LEVELS } from './tutor';
 import { awardXp, patchTopic, topicState } from './game';
 import { originalTask, originalPool } from './originals';
+import { topicStats } from './path';
 
 export function emptyPartAttempt(p: GenPart): PartAttempt {
   return { partId: p.id, lines: [], resolutions: {}, explanation: '', images: [], confirmedReadings: {}, submitted: false };
@@ -286,11 +287,25 @@ export function buildExam(opts: { source: 'reservert' | 'generert'; docId?: stri
   const latest = [...docs].sort((a, b) => (b.meta.year ?? 0) - (a.meta.year ?? 0))[0];
   const subs = store.currentSubtasks().filter((s) => s.docId === latest?.id);
   const famOrder = [...new Set(subs.map((s) => s.analysis.familyKbId).filter((x): x is string => !!x))];
-  const fams = famOrder.length ? famOrder : courseFamilies();
+  let fams = famOrder.length ? famOrder : courseFamilies();
+  // Essayfag: fem hele essayspørsmål fra temaene som kommer oftest (vektet trekning, ingen like).
+  const essay = fams.length > 0 && fams.every((f) => getFamily(f)?.domain === 'org');
+  if (essay) {
+    const stats = topicStats().filter((t) => t.questions > 0);
+    const pool = stats.map((t) => ({ id: t.kbId, w: t.share + 0.1 }));
+    const chosen: string[] = [];
+    while (chosen.length < 5 && pool.length) {
+      const sum = pool.reduce((a, b) => a + b.w, 0);
+      let r = Math.random() * sum;
+      const i = Math.max(0, pool.findIndex((x) => (r -= x.w) <= 0));
+      chosen.push(pool.splice(i, 1)[0].id);
+    }
+    if (chosen.length) fams = chosen;
+  }
   const tasks: GeneratedTask[] = [];
   const existing = store.gens();
   for (const f of fams) {
-    const lvl: VariationLevel = subs.some((s) => s.analysis.familyKbId === f && /avgift|maksimalpris|prosentpoeng|tilbake/i.test(s.text)) ? 3 : 2;
+    const lvl: VariationLevel = essay ? 4 : subs.some((s) => s.analysis.familyKbId === f && /avgift|maksimalpris|prosentpoeng|tilbake/i.test(s.text)) ? 3 : 2;
     const r = generateTasks({ courseId: cid, families: [f], count: 1, level: lvl, style: 'standard', existing: [...existing, ...tasks], sourceRefs: sourceRefsFor([f]), demo: course?.demo });
     tasks.push(...r.tasks);
   }
@@ -301,7 +316,7 @@ export function buildExam(opts: { source: 'reservert' | 'generert'; docId?: stri
     createdAt: now,
     updatedAt: now,
     demo: course?.demo,
-    source: { type: 'generert', basis: latest ? `Speiler oppgavefamiliene i ${latest.meta.setLabel ?? latest.fileName}` : 'Familiene i faget' },
+    source: { type: 'generert', basis: essay ? 'Fem essayspørsmål fra temaene som kommer oftest' : latest ? `Speiler oppgavefamiliene i ${latest.meta.setLabel ?? latest.fileName}` : 'Familiene i faget' },
     basisNote: `${course?.examInfo.durationMin ? `Tid og hjelpemidler fra eksamensopplysningene dine (${course.examInfo.durationMin} min, ${aids}).` : 'Eksamenstid er ikke oppgitt; simuleringen er et forslag basert på tilgjengelig materiale.'} Oppgavene er nye, genererte varianter av familiene i settene dine.`,
     durationMin: duration,
     aids,

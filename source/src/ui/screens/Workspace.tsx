@@ -30,6 +30,7 @@ import { Rat } from '../../math/rational';
 import { SpeakButton } from '../components/Voice';
 import { commentSketchAi } from '../../ai/prompts';
 import { similarExamLike } from '../../learning/examlike';
+import { ORG_TOPIC_MAP } from '../../families/org';
 
 const n = (s: string) => Rat.parse(s).toNumber();
 
@@ -410,6 +411,8 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
   };
 
   const needsSelf = part.kind === 'forklaring' && (part.selfCheck || !aiAvailable()) && !examMode;
+  const orgTopic = ORG_TOPIC_MAP[task.familyKbId];
+  const essayLike = !!orgTopic && part.kind === 'forklaring' && (task.estMinutes ?? 0) >= 20;
 
   return (
     <section className="card stack" aria-label="Ditt arbeid" onBlur={flushPatch}>
@@ -430,18 +433,34 @@ function PartWork({ att, task, part, pa, examMode, onShowBoard }: { att: Attempt
       {part.kind === 'graf' ? <GraphInput att={att} part={part} pa={pa} disabled={submitted} examMode={examMode} /> : null}
       {part.kind === 'forklaring' ? (
         <div className="field">
-          <label htmlFor={`exp-${part.id}`}>{part.math && !part.targets?.length ? 'Kommentar (valgfritt)' : 'Svaret ditt'}</label>
+          <div className="row between">
+            <label htmlFor={`exp-${part.id}`}>{part.math && !part.targets?.length ? 'Kommentar (valgfritt)' : 'Svaret ditt'}</label>
+            {orgTopic && essayLike && !submitted && !examMode && !explanation.trim() ? (
+              <button
+                type="button"
+                className="btn ghost small"
+                title="Setter inn overskrifter for en god svarstruktur. Fyll inn under hver."
+                onClick={() => {
+                  const tpl = orgTopic.structure.map((h) => `${h}:\n`).join('\n');
+                  setExplanation(tpl);
+                  persist({ explanation: tpl });
+                }}
+              >
+                Sett inn svarmal
+              </button>
+            ) : null}
+          </div>
           <textarea
             id={`exp-${part.id}`}
             className="input"
-            style={{ minHeight: part.math && !part.targets?.length ? 70 : 160 }}
+            style={{ minHeight: part.math && !part.targets?.length ? 70 : essayLike ? 340 : 160 }}
             value={explanation}
             disabled={submitted}
             onChange={(e) => {
               setExplanation(e.target.value);
               persist({ explanation: e.target.value });
             }}
-            placeholder={part.math && !part.targets?.length ? 'F.eks. hva du er usikker på.' : /\d/.test(`${task.intro} ${part.prompt}`) ? 'Skriv som på eksamen: definer begrepene, forklar sammenhengen og bruk tallene fra oppgaven.' : 'Skriv som på eksamen: definer begrepene, forklar sammenhengen og konkluder.'}
+            placeholder={part.math && !part.targets?.length ? 'F.eks. hva du er usikker på.' : orgTopic ? 'Skriv som på eksamen: definer begrepene i tråd med pensum, bruk en modell med navn på forfatterne, gi et eksempel fra arbeidslivet, vis til forskning og drøft.' : /\d/.test(`${task.intro} ${part.prompt}`) ? 'Skriv som på eksamen: definer begrepene, forklar sammenhengen og bruk tallene fra oppgaven.' : 'Skriv som på eksamen: definer begrepene, forklar sammenhengen og konkluder.'}
           />
           <WordCount text={explanation} limit={wordLimitOf(`${task.intro} ${part.prompt}`)} />
         </div>

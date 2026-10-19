@@ -9,7 +9,7 @@ import { buildExam, reservedDocs, startAttempt, submitPart, taskFromSubtask, pla
 import { flushAll } from '../flush';
 import { Workspace } from './Workspace';
 import { originalTask } from '../../learning/originals';
-import { buildExamLike, canMakeExamLike, examLikePlan } from '../../learning/examlike';
+import { buildExamLike, canMakeExamLike, examLikePlan, essayCourse } from '../../learning/examlike';
 import { Spinner } from '../components/common';
 import { Icon } from '../components/Icon';
 import { ConfirmButton, DemoBadge, Empty, Notice, Pill, fmtDate } from '../components/common';
@@ -210,6 +210,7 @@ function ExamSetup() {
   const sets = useStore((s) => s.docs().filter((d) => isExamSet(d) && d.status !== 'duplikat' && !d.supersededBy && d.stages.analyse.status === 'ferdig'));
   const canAi = useStore(() => canMakeExamLike());
   const plan = useStore(() => (canAi ? examLikePlan() : []));
+  const essay = useStore(() => essayCourse());
   const [making, setMaking] = useState<string | null>(null);
   const [setId, setSetId] = useState('');
   const open = exams.filter((e) => e.status === 'pågår' || e.status === 'klar');
@@ -268,7 +269,7 @@ function ExamSetup() {
               <strong>Ny prøve i samme format som eksamen</strong>
             </div>
             <p className="small muted">
-              Nye oppgaver laget etter mønster av det nyeste settet ditt: {plan.map((p) => `${p.count} ${FORMAT_LABEL[p.format]}`).join(', ')}. Du har ikke sett oppgavene før, så prøven viser hva du klarer på en ukjent eksamen.
+              Nye oppgaver laget etter mønster av det nyeste settet ditt: {plan.map((p) => `${p.count} ${essay && p.format === 'langsvar' ? 'essayspørsmål' : FORMAT_LABEL[p.format]}`).join(', ')}. Du har ikke sett oppgavene før, så prøven viser hva du klarer på en ukjent eksamen.
             </p>
             {making ? (
               <Spinner label={making} />

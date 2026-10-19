@@ -17,6 +17,8 @@ import { chapters, topicStats, relevanceText, formatText } from '../../learning/
 import { aiAvailable } from '../../ai/client';
 import { evaluate, keysText, noNum, paperSteps, planKeys } from '../../learning/calculator';
 import { Mascot, MascotSays, type Mood } from '../components/Mascot';
+import { OrgModelView } from '../components/OrgModelView';
+import { ORG_MODEL_MAP } from '../../families/org';
 import { LessonText, ColorFormula } from '../components/LessonText';
 import { CalcPad } from '../components/CalcPad';
 import { FigureCrop } from '../components/FigureCrop';
@@ -311,6 +313,12 @@ function hintFor(card: LessonCard, st: CardState, calculator: LearnerProfile['ca
       return 'Si den høyt én gang, så sitter den bedre.';
     case 'check':
       return st.picked !== undefined ? '' : card.numeric ? 'Regn selv før du ser fasiten. Første forsøk gir poeng.' : 'Velg det du tror er riktig. Første forsøk gir poeng.';
+    case 'terms':
+      return 'Forklar begrepet for deg selv først, så snu kortet og sjekk.';
+    case 'case':
+      return st.shown ? 'Se etter de samme kjennetegnene når du skriver eksempler på eksamen.' : 'Hvilket begrep er dette? Tenk før du trykker.';
+    case 'outline':
+      return 'Bruk denne rekkefølgen når du skriver. Den gir struktur, og sensor finner det de ser etter.';
     default:
       return '';
   }
@@ -504,6 +512,95 @@ function CardView({ card, lesson, kbId, st, visual, calculator, onPick, onPatch,
           {card.numeric ? <NumericQuestion q={{ ...card, numeric: card.numeric }} picked={st.picked ?? null} typed={st.calcTry ?? ''} onType={(v) => onPatch({ calcTry: v })} onAnswer={onPick} /> : <McQuestion q={card} picked={st.picked ?? null} onPick={onPick} />}
         </div>
       );
+    case 'terms': {
+      const open = new Set(st.open ?? []);
+      return (
+        <div className="stack">
+          <span className="eyebrow">Begreper</span>
+          <h2 className="lesson-h">{card.title}</h2>
+          <div className="term-list">
+            {card.items.map((it, i) => (
+              <button key={i} className={`term${open.has(i) ? ' open' : ''}`} onClick={() => onPatch({ open: [...open, i] })} aria-expanded={open.has(i)}>
+                <strong>{it.term}</strong>
+                {open.has(i) ? (
+                  <span className="term-back small">
+                    <LessonText text={it.definition} />
+                    {it.example ? (
+                      <span className="term-ex xs">
+                        <b>På jobben:</b> {it.example}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="xs faint">Trykk for definisjonen</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {open.size < card.items.length ? (
+            <button className="btn ghost small" onClick={() => onPatch({ open: card.items.map((_, i) => i) })}>
+              Vis alle
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+    case 'case':
+      return (
+        <div className="stack">
+          <span className="eyebrow">Eksempel fra arbeidslivet</span>
+          <h2 className="lesson-h">{card.title}</h2>
+          <div className="problem-box lesson-body case-box">
+            <LessonText text={card.situation} />
+          </div>
+          {st.shown ? (
+            <div className="why-box ok slide-in">
+              <strong>{card.concept}</strong>
+              <p className="small">
+                <LessonText text={card.explanation} />
+              </p>
+            </div>
+          ) : (
+            <button className="btn" onClick={() => onPatch({ shown: 1 })}>
+              Hvilket begrep er dette?
+            </button>
+          )}
+        </div>
+      );
+    case 'outline':
+      return (
+        <div className="stack">
+          <span className="eyebrow">Svarstruktur{card.minutes ? ` · ca. ${card.minutes} min` : ''}</span>
+          <h2 className="lesson-h">{card.title}</h2>
+          {card.question ? <p className="problem-box small src-text">{card.question}</p> : null}
+          <ol className="outline-list">
+            {card.items.map((it, i) => (
+              <li key={i}>
+                <span className={`step-dot c${(i % 4) + 1}`}>{i + 1}</span>
+                <div className="stack sm" style={{ gap: 2 }}>
+                  <strong className="small">{it.del}</strong>
+                  <span className="small">
+                    <LessonText text={it.tekst} />
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+          {card.points?.length ? (
+            <details className="disclosure">
+              <summary className="small">Dette bør være med for god uttelling</summary>
+              <ul className="small check-list">
+                {card.points.map((p, i) => (
+                  <li key={i}>
+                    <LessonText text={p} />
+                  </li>
+                ))}
+              </ul>
+              <p className="xs muted">Appens faglige tolkning, ikke sensorveiledningens ordlyd.</p>
+            </details>
+          ) : null}
+        </div>
+      );
   }
 }
 
@@ -620,6 +717,10 @@ function VisualView({ v, kbId, visual }: { v: NonNullable<Extract<LessonCard, { 
         ))}
       </div>
     );
+  if (v.kind === 'modell') {
+    const m = ORG_MODEL_MAP[v.modelId];
+    return m ? <OrgModelView model={m} /> : null;
+  }
   const f = getFamily(kbId)?.formulas.find((x) => x.id === v.formulaId);
   if (!f) return null;
   return (

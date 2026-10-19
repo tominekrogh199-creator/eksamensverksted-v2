@@ -13,7 +13,7 @@ import { skillName } from '../../families/skills';
 import { getFamily, domainOf } from '../../families';
 import { courseFamilies } from '../../learning/actions';
 
-const groupDomain = (g: string) => (g === 'elektro' ? 'elektro' : g === 'digital' ? 'digital' : 'økonomi');
+const groupDomain = (g: string) => (g === 'elektro' ? 'elektro' : g === 'digital' ? 'digital' : g === 'org' ? 'org' : 'økonomi');
 
 const GROUPS: { id: string; label: string }[] = [
   { id: 'grunnlag', label: 'Grunnleggende' },
@@ -26,6 +26,7 @@ const GROUPS: { id: string; label: string }[] = [
   { id: 'makro', label: 'Makro' },
   { id: 'elektro', label: 'Elektriske kretser' },
   { id: 'digital', label: 'Digitalteknikk' },
+  { id: 'org', label: 'Organisasjonsatferd og ledelse' },
 ];
 
 const OUTCOME: Record<Evidence['outcome'], { label: string; tone: 'teal' | 'accent' | 'amber' | 'red' | 'outline' }> = {

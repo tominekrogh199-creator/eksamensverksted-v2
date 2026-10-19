@@ -6,7 +6,7 @@ import type { MathContext, AnswerTarget } from '../math/check';
 
 export type ID = string;
 
-export type EntityKind = 'course' | 'doc' | 'page' | 'subtask' | 'family' | 'gen' | 'attempt' | 'evidence' | 'session' | 'exam' | 'settings' | 'profile' | 'lesson' | 'game';
+export type EntityKind = 'course' | 'doc' | 'page' | 'subtask' | 'family' | 'gen' | 'attempt' | 'evidence' | 'session' | 'exam' | 'settings' | 'profile' | 'lesson' | 'game' | 'flash';
 
 export interface BaseEntity {
   id: ID;
@@ -123,6 +123,13 @@ export interface SourceDoc extends BaseEntity {
   selfContained?: boolean;
   /** Versjon av behandlingskjeden dokumentet sist ble kjørt med. Eldre dokumenter analyseres på nytt. */
   pipelineVersion?: number;
+  /** «essay»: fem likeverdige tekstoppgaver (f.eks. organisasjonsatferd og ledelse). */
+  layout?: 'essay';
+  /** Generelle vurderingskriterier fra veiledningen (gjelder alle spørsmålene i settet). */
+  essayCriteria?: { text: string; quote: string; page: number }[];
+  /** Pensumlisten slik veiledningen oppgir den. */
+  curriculum?: string[];
+  language?: 'nb' | 'nn';
 }
 
 /** Dokumenter som gir oppgaver til kart, trening og prøver. */
@@ -588,7 +595,9 @@ export interface LearnerProfile extends BaseEntity {
 export type LessonVisual =
   | { kind: 'flyt'; items: string[] }
   | { kind: 'sammenlign'; left: { title: string; items: string[] }; right: { title: string; items: string[] } }
-  | { kind: 'utforsk'; formulaId: string };
+  | { kind: 'utforsk'; formulaId: string }
+  /** En modell fra organisasjonsfaget, tegnet som figur med trykkbare deler. */
+  | { kind: 'modell'; modelId: string };
 
 export type LessonCard =
   | { type: 'intro'; title: string; body: string; mascot?: string }
@@ -599,7 +608,13 @@ export type LessonCard =
   | { type: 'patterns'; title: string; items: { looksLike: string; means: string }[]; mascot?: string }
   | { type: 'mnemonic'; title: string; body: string; mascot?: string }
   | { type: 'trap'; title: string; body: string; mascot?: string }
-  | { type: 'check'; question: string; options: string[]; correct: number; why: string; mascot?: string; figure?: { docId: string; page: number; box: [number, number, number, number] }; numeric?: { value: number; unit?: string; tol: number } };
+  | { type: 'check'; question: string; options: string[]; correct: number; why: string; mascot?: string; figure?: { docId: string; page: number; box: [number, number, number, number] }; numeric?: { value: number; unit?: string; tol: number } }
+  /** Begreper som snus: begrepet foran, definisjonen (og et eksempel) bak. */
+  | { type: 'terms'; title: string; items: { term: string; definition: string; example?: string }[]; mascot?: string }
+  /** En situasjon fra arbeidslivet: hvilket begrep er dette? */
+  | { type: 'case'; title: string; situation: string; concept: string; explanation: string; mascot?: string }
+  /** Svarstruktur for et essayspørsmål: delene i rekkefølge og det sensor ser etter. */
+  | { type: 'outline'; title: string; question?: string; items: { del: string; tekst: string }[]; points?: string[]; minutes?: number; mascot?: string };
 
 export interface QuizItem {
   question: string;
@@ -653,7 +668,26 @@ export interface GameRec extends BaseEntity {
   resets?: Record<string, string>;
 }
 
-export type Entity = Course | SourceDoc | PageRec | SubTask | Family | GeneratedTask | Attempt | Evidence | SessionRec | ExamSim | SettingsRec | LearnerProfile | LessonRec | GameRec;
+/** Status for ett flashcard (Leitner-bokser). */
+export interface FlashCardState {
+  /** Boks 1–6. Høyere boks = lengre tid til neste repetisjon. */
+  b: number;
+  /** Neste repetisjon (dato, ÅÅÅÅ-MM-DD). */
+  d: string;
+  /** Antall ganger «kunne det» og «kunne ikke». */
+  r: number;
+  w: number;
+  /** Sist øvd (ISO-tid). */
+  l: string;
+}
+
+/** Flashcard-fremgang for ett fag. Ett dokument per fag. */
+export interface FlashRec extends BaseEntity {
+  kind: 'flash';
+  cards: Record<string, FlashCardState>;
+}
+
+export type Entity = Course | SourceDoc | PageRec | SubTask | Family | GeneratedTask | Attempt | Evidence | SessionRec | ExamSim | SettingsRec | LearnerProfile | LessonRec | GameRec | FlashRec;
 
 export function entityKey(e: Pick<BaseEntity, 'kind' | 'id'>): string {
   return `${e.kind}:${e.id}`;

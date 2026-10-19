@@ -47,9 +47,10 @@ function SettingsForm() {
   };
   const deleteHistory = async () => {
     await removePhotos();
-    for (const k of ['attempt', 'evidence', 'session', 'exam'] as const) for (const e of store.list(k, course.id)) store.remove(e);
+    // Alt som bygger på det du har gjort: forsøk, evidens, økter, prøver, flashcard-fremgang og genererte oppgaver.
+    for (const k of ['attempt', 'evidence', 'session', 'exam', 'flash', 'gen'] as const) for (const e of store.list(k, course.id)) store.remove(e);
     resetCourseProgress(course.id);
-    store.toast('Forsøk, bilder, mestringshistorikk, prøver og fremgangen i planen for faget er slettet. Samlede poeng og dager på rad er beholdt.', 'ok');
+    store.toast('Forsøk, bilder, mestring, prøver, flashcards og fremgangen i planen for faget er slettet. Samlede poeng og dager på rad er beholdt.', 'ok');
   };
   const deleteCourse = async () => {
     await removePhotos();
@@ -296,7 +297,7 @@ function SettingsForm() {
           <button className="btn" onClick={exportData}>
             <Icon name="download" size={16} /> Eksporter data for faget (JSON)
           </button>
-          <ConfirmButton confirmText="Slette alle forsøk, prøver, mestringshistorikk og fremgangen i planen (leksjoner og quizrekorder) for faget?" onConfirm={deleteHistory}>
+          <ConfirmButton confirmText="Slette alle forsøk, prøver, mestringshistorikk, flashcards og fremgangen i planen (leksjoner og quizrekorder) for faget?" onConfirm={deleteHistory}>
             Slett forsøk og historikk
           </ConfirmButton>
           <ConfirmButton confirmText="Slette faget med alle dokumenter, bilder, analyser og historikk?" onConfirm={deleteCourse}>

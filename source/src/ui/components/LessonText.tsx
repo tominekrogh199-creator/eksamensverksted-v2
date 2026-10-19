@@ -15,6 +15,7 @@ export function splitMarks(text: string): { hl: number; s: string }[] {
   while (i < text.length) {
     const m = /^\{\{([1-4]):/.exec(text.slice(i, i + 4));
     if (m) {
+      // «{{1:» er fire tegn; innholdet starter rett etter kolonet.
       let depth = 0;
       let j = i + 4;
       for (; j < text.length; j++) {

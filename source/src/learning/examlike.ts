@@ -9,12 +9,14 @@
 // og hvor studenten har slitt.
 
 import type { GeneratedTask, GenPart, SubTask, SourceDoc, SessionRec, Evidence, Course, ExamSim } from '../domain/types';
-import { newId, nowIso } from '../domain/types';
+import { newId, nowIso, isExamSet } from '../domain/types';
 import { store } from '../state/store';
 import { getFamily, familyShort, domainOf } from '../families';
+import type { Domain } from '../families';
 import { elMath, dec } from '../families/el-common';
 import { originalPool } from './originals';
 import { skillName } from '../families/skills';
+import { ESSAY_MINUTES } from '../families/org';
 import { aiJson, aiAvailable, asData, DATA_RULE, V } from '../ai/client';
 
 export type ExamLikeFormat = 'flervalg' | 'kortsvar' | 'langsvar' | 'regne';
@@ -215,11 +217,22 @@ JSON: {"topic":"tema i 2–5 ord","stem":"spørsmålet","options":["…","…","
     return `Format: kortsvar som i Del 2. Ett spørsmål som kan besvares godt på høyst ${wordLimit} ord. Gi 3–5 vurderingspunkter i samme stil som sensorveiledningen (marker hvilke som er nødvendige for full uttelling), et modellsvar på 100–${wordLimit} ord slik et toppsvar ser ut, og 1–3 typiske feil.
 JSON: {"topic":"…","stem":"…","wordLimit":${wordLimit},"criteria":[{"text":"…","required":true}],"modelAnswer":"…","typicalErrors":["…"]}`;
   if (format === 'regne') return regneRules();
+  if (regneDomain === 'org') return essayRules();
   return `Format: lengre oppgave som i Del 3. En kort innledning/case (3–7 setninger, gjerne med konkrete tall eller en konkret situasjon) og 3–4 delspørsmål som bygger på hverandre slik eksamen gjør (først forklare modell/begrep, så anvende på situasjonen, så drøfte en endring eller et tiltak). For hvert delspørsmål: 2–4 vurderingspunkter i sensorveiledningsstil og et kort modellsvar.
 JSON: {"topic":"…","intro":"…","subs":[{"stem":"…","criteria":[{"text":"…","required":true}],"modelAnswer":"…"}]}`;
 }
 
-let regneDomain: 'økonomi' | 'elektro' | 'digital' = 'elektro';
+let regneDomain: Domain = 'elektro';
+
+/** Essayformatet i organisasjonsfag: fem likeverdige spørsmål på tre timer, uten hjelpemidler. */
+function essayRules(): string {
+  return `Format: ett essayspørsmål som på eksamen (fem likeverdige spørsmål på tre timer, uten hjelpemidler, ca. 36 minutter per spørsmål). Spørsmålet er én eller to setninger som ber studenten definere eller forklare et begrep og så beskrive, forklare eller drøfte noe (f.eks. «Hva menes med … og hvordan kan …?»). Det kan be om et eksempel fra arbeidslivet eller fra studiene. Ikke lag case med tall og ikke delspørsmål.
+Gi:
+- "criteria": 4–6 punkter om hva et godt svar må få med (begreper definert i tråd med pensum, relevante teorier og modeller med navn på forfattere, forskning, eksempler, drøfting). Marker de to–tre viktigste som nødvendige.
+- "modelAnswer": et modellsvar på 350–600 ord med tydelig struktur (innledning, definisjon, teori/modell, eksempel fra arbeidslivet, forskning/drøfting, avslutning).
+- "pensum": hvilket tema i pensum spørsmålet bygger på, med ord (ikke sidetall).
+JSON: {"topic":"…","stem":"…","criteria":[{"text":"…","required":true}],"modelAnswer":"…","pensum":"…"}`;
+}
 
 function regneRules(): string {
   const what =
@@ -277,6 +290,26 @@ function validateShort(x: unknown): RawShort | string {
   if (criteria.length < 2) return 'for få vurderingspunkter';
   if (modelAnswer.length < 60) return 'mangler modellsvar';
   return { topic: V.str(o?.topic, 80) ?? '', stem, wordLimit: Math.min(400, Math.max(80, V.num(o?.wordLimit) ?? 200)), criteria, modelAnswer, typicalErrors: V.strs(o?.typicalErrors, 4, 300), skills: V.strs(o?.skills, 4, 60) };
+}
+
+interface RawEssay {
+  topic: string;
+  stem: string;
+  criteria: RawCriterion[];
+  modelAnswer: string;
+  pensum: string;
+  skills: string[];
+}
+
+function validateEssay(x: unknown): RawEssay | string {
+  const o = V.obj(x);
+  const stem = V.str(o?.stem, 1200)?.trim() ?? '';
+  const criteria = criteriaOf(o?.criteria);
+  const modelAnswer = V.str(o?.modelAnswer, 6000)?.trim() ?? '';
+  if (stem.length < 20) return 'mangler spørsmål';
+  if (criteria.length < 3) return 'for få vurderingspunkter';
+  if (modelAnswer.length < 400) return 'for kort modellsvar';
+  return { topic: V.str(o?.topic, 80) ?? '', stem, criteria, modelAnswer, pensum: V.str(o?.pensum, 300) ?? '', skills: V.strs(o?.skills, 4, 60) };
 }
 
 function validateLong(x: unknown): RawLong | string {
@@ -564,6 +597,34 @@ export async function generateExamLike(opts: { kbId?: string; format?: ExamLikeF
       const numeric = R.subs.some((x) => x.answers.length);
       return { task: baseTask(course.id, kbId, `Eksamensnær · ${famName} · regneoppgave`, R.intro, parts, ex, regneChecks(copied, numeric), 7 * parts.length) };
     }
+    if (regneDomain === 'org') {
+      const r = await aiJson(prompt, validateEssay, { tier: 'complex', cache: false });
+      if (!r.ok) {
+        lastErr = r.message;
+        if (!RETRYABLE.includes(r.code)) break;
+        continue;
+      }
+      const E = r.data;
+      pick(E.skills);
+      const copied = copiedShare(`${E.stem} ${E.modelAnswer}`, exTexts);
+      if (copied > 0.2) {
+        lastErr = 'for likt en tidligere eksamensoppgave';
+        continue;
+      }
+      const part: GenPart = {
+        id: 'a',
+        label: 'a',
+        prompt: `${E.stem}\n\n(Sett av ${ESSAY_MINUTES} minutter, uten hjelpemidler.)`,
+        kind: 'forklaring',
+        skills,
+        rubric: rubricOf(E.criteria),
+        solution: [{ tex: '', text: 'Modellsvar', why: E.modelAnswer, kind: 'tolkning' }, ...(E.pensum ? [{ tex: '', text: `Pensum: ${E.pensum}`, why: 'Sjekk mot boka.', kind: 'tolkning' as const }] : [])],
+        hints: { small: familyShort(fam).text, firstStep: fam?.solutionStructure.length ? `Struktur: ${fam.solutionStructure.join(' → ')}.` : 'Start med å definere begrepene.', stepExplanation: '', workedExample: { intro: '', steps: [] } },
+        methodCheckpoints: [{ id: 'forklaring', label: 'Dekket vurderingspunktene', skill: skills[0] ?? 'ukjent', detect: { type: 'forklaring' }, required: true }],
+        modelAnswer: E.modelAnswer,
+      };
+      return { task: baseTask(course.id, kbId, `Eksamensnær · ${famName} · essay`, '', [part], ex, checks(copied, false), ESSAY_MINUTES) };
+    }
     const r = await aiJson(prompt, validateLong, { tier: 'complex', cache: false });
     if (!r.ok) {
       lastErr = r.message;
@@ -742,8 +803,16 @@ export function latestSetMix(): Record<ExamLikeFormat, number> {
   };
 }
 
+/** Faget har essayeksamen (fem likeverdige tekstspørsmål), som organisasjon og ledelse. */
+export function essayCourse(): boolean {
+  const docs = store.docs().filter((d) => isExamSet(d) && d.status !== 'duplikat' && !d.supersededBy);
+  return docs.length > 0 && docs.every((d) => d.layout === 'essay');
+}
+
 /** Planen for en kortere prøve i samme format som det nyeste settet (omtrent halvparten). */
 export function examLikePlan(): { format: ExamLikeFormat; count: number }[] {
+  // Essayfag: en hel eksamen er bare fem spørsmål, så prøven er en hel eksamen.
+  if (essayCourse() && formatPool('langsvar').length) return [{ format: 'langsvar', count: Math.min(5, Math.max(1, latestSetMix().langsvar || 5)) }];
   const mix = latestSetMix();
   const avail = (f: ExamLikeFormat) => formatPool(f).length > 0;
   const plan: { format: ExamLikeFormat; count: number }[] = [];
@@ -773,7 +842,7 @@ export async function buildExamLike(onProgress: (note: string) => void, minutes?
     for (let i = 0; i < p.count; i++) {
       const w = pickWeighted(fw.length ? fw : weights, used, (x) => x.kbId);
       if (w) used.add(w.kbId);
-      if (used.size >= Math.min(fw.length || weights.length, 4)) used.clear();
+      if (used.size >= Math.min(fw.length || weights.length, essayCourse() ? 99 : 4)) used.clear();
       jobs.push({ format: p.format, kbId: w?.kbId });
     }
   }

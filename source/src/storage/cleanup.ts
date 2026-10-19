@@ -7,14 +7,14 @@
 //  - tilbaketrukket evidens eldre enn 30 dager
 // Ingenting du har levert, eller som mestringsbildet bygger på, slettes.
 
-import type { Entity, PageRec, SubTask, GeneratedTask, Evidence, SessionRec, ExamSim, Attempt, SourceDoc, LessonRec, Course } from '../domain/types';
+import type { Entity, PageRec, SubTask, GeneratedTask, Evidence, SessionRec, ExamSim, Attempt, SourceDoc, LessonRec, Course, FlashRec } from '../domain/types';
 import { store } from '../state/store';
 
 export const DOC_LIMIT = 5000;
 
 export function entityCount(): number {
   let n = 0;
-  for (const k of ['settings', 'profile', 'game', 'course', 'lesson', 'doc', 'page', 'subtask', 'family', 'gen', 'attempt', 'evidence', 'session', 'exam'] as const) n += store.list(k).length;
+  for (const k of ['settings', 'profile', 'game', 'flash', 'course', 'lesson', 'doc', 'page', 'subtask', 'family', 'gen', 'attempt', 'evidence', 'session', 'exam'] as const) n += store.list(k).length;
   return n;
 }
 
@@ -23,11 +23,11 @@ export function cleanupCandidates(opts: { orphansOnly?: boolean } = {}): { items
   const courses = new Set(store.list<Course>('course').map((c) => c.id));
   const orphanPages = store.list<PageRec>('page').filter((p) => !docs.has(p.docId));
   const orphanSubs = store.list<SubTask>('subtask').filter((s) => !docs.has(s.docId));
-  const orphanLessons = store.list<LessonRec>('lesson').filter((l) => !courses.has(l.courseId));
+  const orphanLessons = [...store.list<LessonRec>('lesson'), ...store.list<FlashRec>('flash')].filter((l) => !courses.has(l.courseId));
   const out: Entity[] = [...orphanPages, ...orphanSubs, ...orphanLessons];
   const summary: string[] = [];
   if (orphanPages.length + orphanSubs.length) summary.push(`${orphanPages.length + orphanSubs.length} rester av dokumenter som er slettet`);
-  if (orphanLessons.length) summary.push(`${orphanLessons.length} leksjoner fra fag som er slettet`);
+  if (orphanLessons.length) summary.push(`${orphanLessons.length} leksjoner og kortstokker fra fag som er slettet`);
   if (opts.orphansOnly) return { items: out, summary };
 
   const replacedPages = store.list<PageRec>('page').filter((p) => docs.get(p.docId)?.supersededBy);

@@ -10,6 +10,7 @@ import { store } from '../state/store';
 import { familyShort, getFamily } from '../families';
 import { Rat } from '../math/rational';
 import { elMath, eng } from '../families/el-common';
+import { ORG_TOPIC_MAP, ESSAY_MINUTES, intentModelAnswer } from '../families/org';
 
 export function subtaskTitle(st: Pick<SubTask, 'part' | 'sub' | 'label'>): string {
   if (st.part) return `Del ${st.part} · ${st.part === 3 ? `${st.sub})` : `spørsmål ${st.sub}`}`;
@@ -90,6 +91,47 @@ export function rubricFromGuide(text: string): RubricItem[] {
   return out;
 }
 
+/**
+ * Essayspørsmål (organisasjon og ledelse): veiledningen gir generelle kriterier og en
+ * pensumhenvisning per spørsmål, ikke et løsningsforslag. Vurderingsrammen er derfor de
+ * offisielle generelle kriteriene pluss appens faglige tolkning av spørsmålet, og
+ * modellsvaret er en svarskisse fra kunnskapsbasen (merket som appens).
+ */
+function essayPart(st: SubTask, skills: string[]): GenPart | null {
+  if (st.stemMissing || !st.text.trim()) return null;
+  const topic = ORG_TOPIC_MAP[st.analysis.familyKbId ?? ''];
+  const intent = topic?.intents.find((i) => i.id === st.analysis.intentId) ?? topic?.intents[0];
+  const official = st.analysis.criteria.filter((c) => c.basis === 'offisielt' && c.id.startsWith('ess-'));
+  const rubric: RubricItem[] = [
+    ...official.slice(0, 7).map((c, i) => ({ id: `o${i + 1}`, text: c.text, basis: 'offisielt' as const, required: i < 2 })),
+    ...(intent?.keyPoints ?? []).slice(0, 5).map((t, i) => ({ id: `t${i + 1}`, text: t, basis: 'faglig-tolkning' as const, required: i < 2 })),
+  ];
+  if (!rubric.length) return null;
+  const pensum = st.guide?.text?.replace(/\s+/g, ' ').trim() ?? '';
+  const sketch = intent ? intentModelAnswer(intent) : '';
+  return {
+    id: 'a',
+    label: 'a',
+    prompt: `${st.text}\n\n(Fem likeverdige spørsmål på tre timer: sett av ca. ${ESSAY_MINUTES} minutter, uten hjelpemidler.)`,
+    kind: 'forklaring',
+    skills,
+    rubric,
+    answerSource: 'Sensorveiledningen gir generelle kriterier og pensumhenvisning, ikke et fasitsvar. Svarskissen er appens.',
+    solution: [
+      ...(pensum ? [{ tex: '', text: 'Relevant pensum ifølge sensorveiledningen', why: pensum, kind: 'tolkning' as const }] : []),
+      ...(sketch ? [{ tex: '', text: 'Svarskisse (appens, ikke sensorveiledningens)', why: sketch, kind: 'tolkning' as const }] : []),
+    ],
+    hints: {
+      small: topic ? `Temaet er ${topic.shortName.toLowerCase()}. Start med å definere de sentrale begrepene.` : 'Start med å definere begrepene i spørsmålet.',
+      firstStep: topic ? `Struktur: ${topic.structure.join(' → ')}.` : 'Innledning → definisjon → teori/modell → eksempel → drøfting → avslutning.',
+      stepExplanation: pensum ? `Pensum: ${pensum.slice(0, 300)}` : '',
+      workedExample: { intro: '', steps: [] },
+    },
+    methodCheckpoints: [{ id: 'forklaring', label: 'Dekket kriteriene', skill: skills[0] ?? 'ukjent', detect: { type: 'forklaring' }, required: true }],
+    modelAnswer: sketch ? `Svarskisse fra appen (ikke sensorveiledningens):\n\n${sketch}${pensum ? `\n\nRelevant pensum ifølge sensorveiledningen: ${pensum}` : ''}` : pensum || undefined,
+  };
+}
+
 /** Lager en øvingsoppgave av et originalt spørsmål. Returnerer null når kilden ikke gir nok til å øve (f.eks. bare svar). */
 export function originalTask(st: SubTask): GeneratedTask | null {
   const doc = store.get<SourceDoc>('doc', st.docId);
@@ -99,7 +141,12 @@ export function originalTask(st: SubTask): GeneratedTask | null {
   const skills = st.analysis.skills?.value?.length ? st.analysis.skills.value : getFamily(st.analysis.familyKbId)?.skills.slice(0, 2) ?? [];
   const guide = st.guide?.text ?? '';
   const fam = getFamily(st.analysis.familyKbId);
-  if (st.format === 'oppgave' && (st.regions?.length || st.solutionRegions?.length)) {
+  const essay = doc?.layout === 'essay' || !!ORG_TOPIC_MAP[st.analysis.familyKbId ?? ''];
+  if (essay && st.format !== 'flervalg') {
+    const p = essayPart(st, skills);
+    if (!p) return null;
+    parts.push(p);
+  } else if (st.format === 'oppgave' && (st.regions?.length || st.solutionRegions?.length)) {
     parts.push(...originalOppgave(st, doc, skills));
   } else if (st.format === 'flervalg') {
     if (st.stemMissing || st.choices === undefined || st.choices.length < 2) return null;
@@ -183,9 +230,9 @@ export function originalTask(st: SubTask): GeneratedTask | null {
     skills,
     structureKey: `original|${st.id}`,
     sourceRefs: { subtaskIds: [st.id] },
-    validation: { status: 'gyldig', checks: [{ name: st.format === 'oppgave' ? 'Fra løsningsforslaget' : 'Fra sensorveiledningen', ok: true, detail: st.format === 'flervalg' ? `Fasit: ${st.answerBasis ?? 'oppgitt'}.` : st.format === 'oppgave' ? `${st.answerKeys?.length ?? 0} sluttsvar lest fra løsningsforslaget; hele løsningen vises som utsnitt.` : 'Vurderingsrammen er sensorveiledningens egne punkter.' }] },
+    validation: { status: 'gyldig', checks: [{ name: st.format === 'oppgave' ? 'Fra løsningsforslaget' : 'Fra sensorveiledningen', ok: true, detail: essay ? 'Vurderingsrammen er sensorveiledningens generelle kriterier pluss appens faglige tolkning av spørsmålet (merket hver for seg).' : st.format === 'flervalg' ? `Fasit: ${st.answerBasis ?? 'oppgitt'}.` : st.format === 'oppgave' ? `${st.answerKeys?.length ?? 0} sluttsvar lest fra løsningsforslaget; hele løsningen vises som utsnitt.` : 'Vurderingsrammen er sensorveiledningens egne punkter.' }] },
     wording: 'mal',
-    estMinutes: st.format === 'flervalg' ? 2 : st.format === 'kortsvar' ? 8 : 10,
+    estMinutes: essay ? ESSAY_MINUTES : st.format === 'flervalg' ? 2 : st.format === 'kortsvar' ? 8 : 10,
     sourceFigures: st.regions?.length ? st.figures.filter((f) => f.box && !f.inGuide && !st.regions!.some((r) => r.page === f.page && f.box![1] >= r.box[1] - 0.01 && f.box![1] + f.box![3] <= r.box[1] + r.box[3] + 0.01)).map((f) => ({ docId: st.docId, page: f.page, box: f.box! })) : st.figures.filter((f) => f.box && !f.inGuide).map((f) => ({ docId: st.docId, page: f.page, box: f.box! })),
     sourceRegions: st.regions?.map((r) => ({ docId: st.docId, page: r.page, box: r.box })),
     solutionRegions: st.solutionRegions?.map((r) => ({ docId: st.docId, page: r.page, box: r.box })),

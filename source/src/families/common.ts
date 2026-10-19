@@ -141,10 +141,12 @@ export interface ExplanationSet {
   derivationFormulaId: string;
 }
 
+export type Domain = 'økonomi' | 'elektro' | 'digital' | 'org';
+
 export interface FamilyKB {
   id: string;
   /** Fagområde. Familier fra andre fagområder vises ikke i et fag. */
-  domain?: 'økonomi' | 'elektro' | 'digital';
+  domain?: Domain;
   name: string;
   shortName: string;
   topic: string;

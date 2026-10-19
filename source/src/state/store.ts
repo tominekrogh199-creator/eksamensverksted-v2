@@ -2,12 +2,12 @@
 // kø som samler raske endringer til én skriving per dokument.
 
 import { useSyncExternalStore } from 'react';
-import type { Entity, EntityKind, Course, SourceDoc, PageRec, SubTask, Family, GeneratedTask, Attempt, Evidence, SessionRec, ExamSim, SettingsRec, GameRec } from '../domain/types';
+import type { Entity, EntityKind, Course, SourceDoc, PageRec, SubTask, Family, GeneratedTask, Attempt, Evidence, SessionRec, ExamSim, SettingsRec, GameRec, FlashRec } from '../domain/types';
 import { entityKey, nowIso } from '../domain/types';
 import type { Backend } from '../storage/backend';
 import type { Platform } from '../storage/platform';
 import { outbox } from '../storage/outbox';
-import { mergeGame, sameGame } from '../learning/merge';
+import { mergeGame, sameGame, mergeFlash, sameFlash } from '../learning/merge';
 
 export type Route =
   | { name: 'velkommen' }
@@ -22,7 +22,9 @@ export type Route =
   | { name: 'status' }
   | { name: 'ommeg' }
   | { name: 'laer'; kbId: string; part?: 'leksjon' | 'quiz' }
-  | { name: 'konkurranse'; chapter: string };
+  | { name: 'konkurranse'; chapter: string }
+  | { name: 'kort'; topic?: string; type?: 'begrep' | 'eksempel' | 'modell' }
+  | { name: 'modeller'; modelId?: string };
 
 export interface Toast {
   id: number;
@@ -80,7 +82,7 @@ export interface SaveState {
 }
 
 /** Brukerens eget arbeid skrives før store mengder fra dokumentanalysen. */
-const PRIORITY: Record<string, number> = { attempt: 0, evidence: 0, session: 0, settings: 0, profile: 0, game: 0, course: 1, gen: 1, exam: 1, lesson: 1, family: 2, doc: 2, subtask: 3, page: 3 };
+const PRIORITY: Record<string, number> = { attempt: 0, evidence: 0, session: 0, settings: 0, profile: 0, game: 0, flash: 0, course: 1, gen: 1, exam: 1, lesson: 1, family: 2, doc: 2, subtask: 3, page: 3 };
 const MAX_PARALLEL = 3;
 const MIN_GAP_MS = 110;
 
@@ -186,6 +188,21 @@ class Store {
     for (const e of list) {
       const k = entityKey(e);
       // Poeng og fremgang slås sammen felt for felt (begge enheter kan ha tjent poeng).
+      if (e.kind === 'flash') {
+        const cur = this.entities.get(k) as FlashRec | undefined;
+        if (!cur) {
+          this.entities.set(k, e);
+          this.lastWritten.set(k, signature(e));
+          n++;
+          continue;
+        }
+        const m = mergeFlash(cur, e as FlashRec);
+        if (!sameFlash(m, cur)) {
+          this.upsert(m, { silent: true });
+          n++;
+        }
+        continue;
+      }
       if (e.kind === 'game') {
         const cur = this.entities.get(k) as GameRec | undefined;
         if (!cur) {
@@ -303,10 +320,14 @@ class Store {
       this.schedule(this.pauseUntil - now);
       return;
     }
-    while (this.inflight.size < MAX_PARALLEL && this.pending.size) {
+    // Skyen har grenser for hvor mange kall som kan gjøres; lokal lagring (IndexedDB) har ikke det.
+    const local = this.backend.kind !== 'sky';
+    const maxPar = local ? 12 : MAX_PARALLEL;
+    const minGap = local ? 0 : MIN_GAP_MS;
+    while (this.inflight.size < maxPar && this.pending.size) {
       const gap = Date.now() - this.lastStart;
-      if (gap < MIN_GAP_MS && !force) {
-        this.schedule(MIN_GAP_MS - gap);
+      if (gap < minGap && !force) {
+        this.schedule(minGap - gap);
         break;
       }
       let best: [string, PendingWrite] | null = null;
